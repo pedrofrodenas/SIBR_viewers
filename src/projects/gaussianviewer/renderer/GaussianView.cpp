@@ -520,6 +520,7 @@ void sibr::GaussianView::onRenderIBR(sibr::IRenderTarget & dst, const sibr::Came
 			tan_fovy,
 			false,
 			image_cuda,
+			_antialiasing,
 			nullptr,
 			rects,
 			boxmin,
@@ -572,6 +573,7 @@ void sibr::GaussianView::onGUI()
 		ImGui::SliderFloat("Scaling Modifier", &_scalingModifier, 0.001f, 1.0f);
 	}
 	ImGui::Checkbox("Fast culling", &_fastCulling);
+	ImGui::Checkbox("Antialiasing", &_antialiasing);
 
 	ImGui::Checkbox("Crop Box", &_cropping);
 	if (_cropping)

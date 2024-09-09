@@ -86,7 +86,7 @@ namespace sibr {
 	protected:
 
 		std::string currMode = "Splats";
-
+		bool _antialiasing = false;
 		bool _cropping = false;
 		sibr::Vector3f _boxmin, _boxmax, _scenemin, _scenemax;
 		char _buff[512] = "cropped.ply";

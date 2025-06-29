@@ -43,6 +43,18 @@ struct RichPoint
 	Rot rot;
 };
 
+template<int D>
+struct ExtendedRichPoint
+{
+    Pos pos;
+    float n[3];
+    SHs<D> shs;
+    float opacity;
+    Scale scale;
+    Rot rot;
+    float obj_dc[16];  // New: object-specific data
+};
+
 float sigmoid(const float m1)
 {
 	return 1.0f / (1.0f + exp(-m1));
@@ -64,6 +76,207 @@ SIBR_ERR << cudaGetErrorString(cudaGetLastError());
 #else
 # define CUDA_SAFE_CALL(A) A
 #endif
+
+
+// Load the Gaussians from the given file with extended format support.
+template<int D>
+int loadPlyExtended(const char* filename,
+    std::vector<Pos>& pos,
+    std::vector<SHs<3>>& shs,
+    std::vector<float>& opacities,
+    std::vector<Scale>& scales,
+    std::vector<Rot>& rot,
+    std::vector<std::vector<float>>& obj_data,  // New: object data output
+    sibr::Vector3f& minn,
+    sibr::Vector3f& maxx)
+{
+    std::ifstream infile(filename, std::ios_base::binary);
+
+    if (!infile.good())
+        SIBR_ERR << "Unable to find model's PLY file, attempted:\n" << filename << std::endl;
+
+    // "Parse" header (it has to be a specific format anyway)
+    std::string buff;
+    std::getline(infile, buff);
+    std::getline(infile, buff);
+
+    std::string dummy;
+    std::getline(infile, buff);
+    std::stringstream ss(buff);
+    int count;
+    ss >> dummy >> dummy >> count;
+
+    // Output number of Gaussians contained
+    SIBR_LOG << "Loading " << count << " Gaussian splats with extended format" << std::endl;
+
+    // Parse header to detect format
+    bool hasObjData = false;
+    int propertyCount = 0;
+    while (std::getline(infile, buff)) {
+        if (buff.compare("end_header") == 0)
+            break;
+        if (buff.find("property float obj_dc_") != std::string::npos) {
+            hasObjData = true;
+        }
+        if (buff.find("property float") != std::string::npos) {
+            propertyCount++;
+        }
+    }
+
+    if (hasObjData) {
+        // Read extended format
+        std::vector<ExtendedRichPoint<D>> points(count);
+        infile.read((char*)points.data(), count * sizeof(ExtendedRichPoint<D>));
+
+        // Resize our SoA data
+        pos.resize(count);
+        shs.resize(count);
+        scales.resize(count);
+        rot.resize(count);
+        opacities.resize(count);
+        obj_data.resize(count, std::vector<float>(16));  // 16 obj_dc values per point
+
+        // Calculate bounding box for Morton ordering
+        minn = sibr::Vector3f(FLT_MAX, FLT_MAX, FLT_MAX);
+        maxx = -minn;
+        for (int i = 0; i < count; i++) {
+            maxx = maxx.cwiseMax(points[i].pos);
+            minn = minn.cwiseMin(points[i].pos);
+        }
+
+        // Morton ordering
+        std::vector<std::pair<uint64_t, int>> mapp(count);
+        for (int i = 0; i < count; i++) {
+            sibr::Vector3f rel = (points[i].pos - minn).array() / (maxx - minn).array();
+            sibr::Vector3f scaled = ((float((1 << 21) - 1)) * rel);
+            sibr::Vector3i xyz = scaled.cast<int>();
+
+            uint64_t code = 0;
+            for (int j = 0; j < 21; j++) {
+                code |= ((uint64_t(xyz.x() & (1 << j))) << (2 * j + 0));
+                code |= ((uint64_t(xyz.y() & (1 << j))) << (2 * j + 1));
+                code |= ((uint64_t(xyz.z() & (1 << j))) << (2 * j + 2));
+            }
+
+            mapp[i].first = code;
+            mapp[i].second = i;
+        }
+
+        auto sorter = [](const std::pair<uint64_t, int>& a, const std::pair<uint64_t, int>& b) {
+            return a.first < b.first;
+        };
+        std::sort(mapp.begin(), mapp.end(), sorter);
+
+        // Move data from AoS to SoA
+        int SH_N = (D + 1) * (D + 1);
+        for (int k = 0; k < count; k++) {
+            int i = mapp[k].second;
+            pos[k] = points[i].pos;
+
+            // Normalize quaternion
+            float length2 = 0;
+            for (int j = 0; j < 4; j++)
+                length2 += points[i].rot.rot[j] * points[i].rot.rot[j];
+            float length = sqrt(length2);
+            for (int j = 0; j < 4; j++)
+                rot[k].rot[j] = points[i].rot.rot[j] / length;
+
+            // Exponentiate scale
+            for (int j = 0; j < 3; j++)
+                scales[k].scale[j] = exp(points[i].scale.scale[j]);
+
+            // Activate alpha
+            opacities[k] = sigmoid(points[i].opacity);
+
+            // Handle spherical harmonics
+            shs[k].shs[0] = points[i].shs.shs[0];
+            shs[k].shs[1] = points[i].shs.shs[1];
+            shs[k].shs[2] = points[i].shs.shs[2];
+            for (int j = 1; j < SH_N; j++) {
+                shs[k].shs[j * 3 + 0] = points[i].shs.shs[(j - 1) + 3];
+                shs[k].shs[j * 3 + 1] = points[i].shs.shs[(j - 1) + SH_N + 2];
+                shs[k].shs[j * 3 + 2] = points[i].shs.shs[(j - 1) + 2 * SH_N + 1];
+            }
+
+            // Copy object data
+            for (int j = 0; j < 16; j++) {
+                obj_data[k][j] = points[i].obj_dc[j];
+            }
+        }
+    } else {
+        // Fallback to original format - use existing RichPoint structure
+        std::vector<RichPoint<D>> points(count);
+        infile.read((char*)points.data(), count * sizeof(RichPoint<D>));
+
+        // Resize our SoA data (no obj_data for original format)
+        pos.resize(count);
+        shs.resize(count);
+        scales.resize(count);
+        rot.resize(count);
+        opacities.resize(count);
+        obj_data.clear(); // No object data in original format
+
+        // Rest of the original processing logic...
+        // (Same as your original function)
+        minn = sibr::Vector3f(FLT_MAX, FLT_MAX, FLT_MAX);
+        maxx = -minn;
+        for (int i = 0; i < count; i++) {
+            maxx = maxx.cwiseMax(points[i].pos);
+            minn = minn.cwiseMin(points[i].pos);
+        }
+
+        std::vector<std::pair<uint64_t, int>> mapp(count);
+        for (int i = 0; i < count; i++) {
+            sibr::Vector3f rel = (points[i].pos - minn).array() / (maxx - minn).array();
+            sibr::Vector3f scaled = ((float((1 << 21) - 1)) * rel);
+            sibr::Vector3i xyz = scaled.cast<int>();
+
+            uint64_t code = 0;
+            for (int j = 0; j < 21; j++) {
+                code |= ((uint64_t(xyz.x() & (1 << j))) << (2 * j + 0));
+                code |= ((uint64_t(xyz.y() & (1 << j))) << (2 * j + 1));
+                code |= ((uint64_t(xyz.z() & (1 << j))) << (2 * j + 2));
+            }
+
+            mapp[i].first = code;
+            mapp[i].second = i;
+        }
+
+        auto sorter = [](const std::pair<uint64_t, int>& a, const std::pair<uint64_t, int>& b) {
+            return a.first < b.first;
+        };
+        std::sort(mapp.begin(), mapp.end(), sorter);
+
+        int SH_N = (D + 1) * (D + 1);
+        for (int k = 0; k < count; k++) {
+            int i = mapp[k].second;
+            pos[k] = points[i].pos;
+
+            float length2 = 0;
+            for (int j = 0; j < 4; j++)
+                length2 += points[i].rot.rot[j] * points[i].rot.rot[j];
+            float length = sqrt(length2);
+            for (int j = 0; j < 4; j++)
+                rot[k].rot[j] = points[i].rot.rot[j] / length;
+
+            for (int j = 0; j < 3; j++)
+                scales[k].scale[j] = exp(points[i].scale.scale[j]);
+
+            opacities[k] = sigmoid(points[i].opacity);
+
+            shs[k].shs[0] = points[i].shs.shs[0];
+            shs[k].shs[1] = points[i].shs.shs[1];
+            shs[k].shs[2] = points[i].shs.shs[2];
+            for (int j = 1; j < SH_N; j++) {
+                shs[k].shs[j * 3 + 0] = points[i].shs.shs[(j - 1) + 3];
+                shs[k].shs[j * 3 + 1] = points[i].shs.shs[(j - 1) + SH_N + 2];
+                shs[k].shs[j * 3 + 2] = points[i].shs.shs[(j - 1) + 2 * SH_N + 1];
+            }
+        }
+    }
+
+    return count;
+}
 
 // Load the Gaussians from the given file.
 template<int D>
@@ -360,21 +573,24 @@ sibr::GaussianView::GaussianView(const sibr::BasicIBRScene::Ptr & ibrScene, uint
 	std::vector<Scale> scale;
 	std::vector<float> opacity;
 	std::vector<SHs<3>> shs;
+
+	std::vector<std::vector<float>> objectData;  // NEW: For obj_dc_0 to obj_dc_15
+
 	if (sh_degree == 0)
 	{
-		count = loadPly<0>(file, pos, shs, opacity, scale, rot, _scenemin, _scenemax);
+		count = loadPlyExtended<0>(file, pos, shs, opacity, scale, rot, objectData, _scenemin, _scenemax);
 	}
 	else if (sh_degree == 1)
 	{
-		count = loadPly<1>(file, pos, shs, opacity, scale, rot, _scenemin, _scenemax);
+		count = loadPlyExtended<1>(file, pos, shs, opacity, scale, rot, objectData, _scenemin, _scenemax);
 	}
 	else if (sh_degree == 2)
 	{
-		count = loadPly<2>(file, pos, shs, opacity, scale, rot, _scenemin, _scenemax);
+		count = loadPlyExtended<2>(file, pos, shs, opacity, scale, rot, objectData, _scenemin, _scenemax);
 	}
 	else if (sh_degree == 3)
 	{
-		count = loadPly<3>(file, pos, shs, opacity, scale, rot, _scenemin, _scenemax);
+		count = loadPlyExtended<3>(file, pos, shs, opacity, scale, rot, objectData, _scenemin, _scenemax);
 	}
 
 	_boxmin = _scenemin;

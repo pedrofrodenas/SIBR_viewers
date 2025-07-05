@@ -76,6 +76,8 @@ namespace sibr {
 		 */
 		void onGUI() override;
 
+		void removeHalfGaussians();
+
 		/** \return a reference to the scene */
 		const std::shared_ptr<sibr::BasicIBRScene> & getScene() const { return _scene; }
 
@@ -122,6 +124,8 @@ namespace sibr {
 		std::vector<char> fallback_bytes;
 		float* fallbackBufferCuda = nullptr;
 		bool accepted = false;
+
+		bool _removeGaussians= false;
 
 
 		std::shared_ptr<sibr::BasicIBRScene> _scene; ///< The current scene.

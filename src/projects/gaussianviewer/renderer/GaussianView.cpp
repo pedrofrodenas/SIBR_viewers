@@ -669,6 +669,78 @@ void sibr::GaussianView::setScene(const sibr::BasicIBRScene::Ptr & newScene)
 	_scene->cameras()->debugFlagCameraAsUsed(imgs_ulr);
 }
 
+void sibr::GaussianView::removeHalfGaussians()
+{
+    if (count <= 1) return; // Don't remove if we have 1 or fewer Gaussians
+
+    // Step 1: Copy data from GPU to CPU
+    std::vector<Pos> pos(count);
+    std::vector<Rot> rot(count);
+    std::vector<Scale> scale(count);
+    std::vector<float> opacity(count);
+    std::vector<SHs<3>> shs(count);
+
+    CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(pos.data(), pos_cuda, sizeof(Pos) * count, cudaMemcpyDeviceToHost));
+    CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(rot.data(), rot_cuda, sizeof(Rot) * count, cudaMemcpyDeviceToHost));
+    CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(scale.data(), scale_cuda, sizeof(Scale) * count, cudaMemcpyDeviceToHost));
+    CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(opacity.data(), opacity_cuda, sizeof(float) * count, cudaMemcpyDeviceToHost));
+    CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(shs.data(), shs_cuda, sizeof(SHs<3>) * count, cudaMemcpyDeviceToHost));
+
+    // Step 2: Remove half of the Gaussians (keep every other one)
+    int newCount = count / 2;
+    std::vector<Pos> newPos(newCount);
+    std::vector<Rot> newRot(newCount);
+    std::vector<Scale> newScale(newCount);
+    std::vector<float> newOpacity(newCount);
+    std::vector<SHs<3>> newShs(newCount);
+
+    for (int i = 0; i < newCount; i++) {
+        int srcIndex = i * 2; // Take every other Gaussian
+        newPos[i] = pos[srcIndex];
+        newRot[i] = rot[srcIndex];
+        newScale[i] = scale[srcIndex];
+        newOpacity[i] = opacity[srcIndex];
+        newShs[i] = shs[srcIndex];
+    }
+
+    // Step 3: Free old GPU memory
+    cudaFree(pos_cuda);
+    cudaFree(rot_cuda);
+    cudaFree(scale_cuda);
+    cudaFree(opacity_cuda);
+    cudaFree(shs_cuda);
+
+    // Step 4: Allocate new GPU memory for reduced dataset
+    CUDA_SAFE_CALL_ALWAYS(cudaMalloc((void**)&pos_cuda, sizeof(Pos) * newCount));
+    CUDA_SAFE_CALL_ALWAYS(cudaMalloc((void**)&rot_cuda, sizeof(Rot) * newCount));
+    CUDA_SAFE_CALL_ALWAYS(cudaMalloc((void**)&scale_cuda, sizeof(Scale) * newCount));
+    CUDA_SAFE_CALL_ALWAYS(cudaMalloc((void**)&opacity_cuda, sizeof(float) * newCount));
+    CUDA_SAFE_CALL_ALWAYS(cudaMalloc((void**)&shs_cuda, sizeof(SHs<3>) * newCount));
+
+    // Step 5: Copy reduced data back to GPU
+    CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(pos_cuda, newPos.data(), sizeof(Pos) * newCount, cudaMemcpyHostToDevice));
+    CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(rot_cuda, newRot.data(), sizeof(Rot) * newCount, cudaMemcpyHostToDevice));
+    CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(scale_cuda, newScale.data(), sizeof(Scale) * newCount, cudaMemcpyHostToDevice));
+    CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(opacity_cuda, newOpacity.data(), sizeof(float) * newCount, cudaMemcpyHostToDevice));
+    CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(shs_cuda, newShs.data(), sizeof(SHs<3>) * newCount, cudaMemcpyHostToDevice));
+
+    // Step 6: Update count and other related data
+    count = newCount;
+
+    // Update GaussianData object if needed
+    if (gData) {
+        delete gData;
+        gData = new GaussianData(newCount,
+            (float*)newPos.data(),
+            (float*)newRot.data(),
+            (float*)newScale.data(),
+            newOpacity.data(),
+            (float*)newShs.data());
+    }
+
+    SIBR_LOG << "Reduced Gaussians from " << (count * 2) << " to " << count << std::endl;
+}
+
 void sibr::GaussianView::onRenderIBR(sibr::IRenderTarget & dst, const sibr::Camera & eye)
 {
 	if (currMode == "Ellipsoids")
@@ -769,6 +841,18 @@ void sibr::GaussianView::onUpdate(Input & input)
 
 void sibr::GaussianView::onGUI()
 {
+	const std::string editName = "3D Gaussians Edit";
+	if (ImGui::Begin(editName.c_str()))
+	{
+		ImGui::Checkbox("Remove Half Gaussians", &_removeGaussians);
+		if (_removeGaussians)
+		{
+			removeHalfGaussians();
+			_removeGaussians = false;
+		}
+		ImGui::End();
+	}
+
 	// Generate and update UI elements
 	const std::string guiName = "3D Gaussians";
 	if (ImGui::Begin(guiName.c_str())) 

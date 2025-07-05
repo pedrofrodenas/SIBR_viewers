@@ -18,42 +18,6 @@
 
 // Define the types and sizes that make up the contents of each Gaussian 
 // in the trained model.
-typedef sibr::Vector3f Pos;
-template<int D>
-struct SHs
-{
-	float shs[(D+1)*(D+1)*3];
-};
-struct Scale
-{
-	float scale[3];
-};
-struct Rot
-{
-	float rot[4];
-};
-template<int D>
-struct RichPoint
-{
-	Pos pos;
-	float n[3];
-	SHs<D> shs;
-	float opacity;
-	Scale scale;
-	Rot rot;
-};
-
-template<int D>
-struct ExtendedRichPoint
-{
-    Pos pos;
-    float n[3];
-    SHs<D> shs;
-    float opacity;
-    Scale scale;
-    Rot rot;
-    float obj_dc[16];  // New: object-specific data
-};
 
 float sigmoid(const float m1)
 {
@@ -598,6 +562,10 @@ sibr::GaussianView::GaussianView(const sibr::BasicIBRScene::Ptr & ibrScene, uint
 
 	int P = count;
 
+	_originalPos = pos;
+
+	backupOriginalData(pos, rot, scale, opacity, shs, objectData);
+
 	// Allocate and fill the GPU data
 	CUDA_SAFE_CALL_ALWAYS(cudaMalloc((void**)&pos_cuda, sizeof(Pos) * P));
 	CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(pos_cuda, pos.data(), sizeof(Pos) * P, cudaMemcpyHostToDevice));
@@ -667,6 +635,72 @@ void sibr::GaussianView::setScene(const sibr::BasicIBRScene::Ptr & newScene)
 		}
 	}
 	_scene->cameras()->debugFlagCameraAsUsed(imgs_ulr);
+}
+
+void sibr::GaussianView::backupOriginalData(
+	std::vector<Pos>& pos,
+	std::vector<Rot>& rot,
+	std::vector<Scale>& scale,
+	std::vector<float>& opacity,
+	std::vector<SHs<3>>& shs,
+	std::vector<std::vector<float>>& od)
+{
+	// Store regular data
+	_originalPos = pos;
+	_originalRot = rot;
+	_originalScale = scale;
+	_originalOpacity = opacity;
+	_originalCount = pos.size();
+	_originalShs = shs;
+
+	// Store DC data if needed
+	_original_objectData = od; // You might need to handle this similarly
+}
+
+void sibr::GaussianView::restoreOriginalData()
+{
+    // Check if we have valid backup data
+    if (_originalCount == 0 || _originalPos.empty()) {
+        SIBR_LOG << "No original data to restore!" << std::endl;
+        return;
+    }
+
+    // Step 1: Free current GPU memory
+    cudaFree(pos_cuda);
+    cudaFree(rot_cuda);
+    cudaFree(scale_cuda);
+    cudaFree(opacity_cuda);
+    cudaFree(shs_cuda);
+
+    // Step 2: Restore count to original
+    count = _originalCount;
+
+    // Step 3: Allocate new GPU memory for original dataset
+    CUDA_SAFE_CALL_ALWAYS(cudaMalloc((void**)&pos_cuda, sizeof(Pos) * count));
+    CUDA_SAFE_CALL_ALWAYS(cudaMalloc((void**)&rot_cuda, sizeof(Rot) * count));
+    CUDA_SAFE_CALL_ALWAYS(cudaMalloc((void**)&scale_cuda, sizeof(Scale) * count));
+    CUDA_SAFE_CALL_ALWAYS(cudaMalloc((void**)&opacity_cuda, sizeof(float) * count));
+    CUDA_SAFE_CALL_ALWAYS(cudaMalloc((void**)&shs_cuda, sizeof(SHs<3>) * count));
+
+    // Step 4: Copy original data back to GPU
+    CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(pos_cuda, _originalPos.data(), sizeof(Pos) * count, cudaMemcpyHostToDevice));
+    CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(rot_cuda, _originalRot.data(), sizeof(Rot) * count, cudaMemcpyHostToDevice));
+    CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(scale_cuda, _originalScale.data(), sizeof(Scale) * count, cudaMemcpyHostToDevice));
+    CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(opacity_cuda, _originalOpacity.data(), sizeof(float) * count, cudaMemcpyHostToDevice));
+    CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(shs_cuda, _originalShs.data(), sizeof(SHs<3>) * count, cudaMemcpyHostToDevice));
+
+    // Step 5: Update GaussianData object if needed
+    if (gData) {
+        delete gData;
+        gData = new GaussianData(count,
+            (float*)_originalPos.data(),
+            (float*)_originalRot.data(),
+            (float*)_originalScale.data(),
+            _originalOpacity.data(),
+            (float*)_originalShs.data());
+    }
+
+    SIBR_LOG << "Restored original data with " << count << " Gaussians" << std::endl;
 }
 
 void sibr::GaussianView::removeHalfGaussians()
@@ -849,6 +883,12 @@ void sibr::GaussianView::onGUI()
 		{
 			removeHalfGaussians();
 			_removeGaussians = false;
+		}
+		ImGui::Checkbox("Restore Original Data", &_restoreOriginal);
+		if (_restoreOriginal)
+		{
+			restoreOriginalData();
+			_restoreOriginal = false;
 		}
 		ImGui::End();
 	}

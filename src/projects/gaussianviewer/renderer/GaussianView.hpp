@@ -26,6 +26,44 @@
 #include <functional>
 # include "GaussianSurfaceRenderer.hpp"
 
+struct Scale
+{
+	float scale[3];
+};
+typedef sibr::Vector3f Pos;
+template<int D>
+struct SHs
+{
+	float shs[(D+1)*(D+1)*3];
+};
+
+struct Rot
+{
+	float rot[4];
+};
+template<int D>
+struct RichPoint
+{
+	Pos pos;
+	float n[3];
+	SHs<D> shs;
+	float opacity;
+	Scale scale;
+	Rot rot;
+};
+
+template<int D>
+struct ExtendedRichPoint
+{
+	Pos pos;
+	float n[3];
+	SHs<D> shs;
+	float opacity;
+	Scale scale;
+	Rot rot;
+	float obj_dc[16];  // New: object-specific data
+};
+
 namespace CudaRasterizer
 {
 	class Rasterizer;
@@ -76,7 +114,19 @@ namespace sibr {
 		 */
 		void onGUI() override;
 
+		void restoreOriginalData();
+
 		void removeHalfGaussians();
+
+
+		void backupOriginalData(std::vector<Pos>& pos, std::vector<Rot>& rot, std::vector<Scale>& scale,
+			std::vector<float>& opacity,
+			std::vector<SHs<3>>& shs,
+			std::vector<std::vector<float>>& od
+			);
+
+		template<int D>
+		void restoreOriginalData();
 
 		/** \return a reference to the scene */
 		const std::shared_ptr<sibr::BasicIBRScene> & getScene() const { return _scene; }
@@ -126,6 +176,16 @@ namespace sibr {
 		bool accepted = false;
 
 		bool _removeGaussians= false;
+		bool _restoreOriginal = false;
+
+		// Original Data Backup
+		std::vector<Pos> _originalPos;
+		std::vector<Rot> _originalRot;
+		std::vector<Scale> _originalScale;
+		std::vector<float> _originalOpacity;
+		std::vector<std::vector<float>> _original_objectData;
+		std::vector<SHs<3>> _originalShs;  // Raw bytes storage
+		int _originalCount;
 
 
 		std::shared_ptr<sibr::BasicIBRScene> _scene; ///< The current scene.

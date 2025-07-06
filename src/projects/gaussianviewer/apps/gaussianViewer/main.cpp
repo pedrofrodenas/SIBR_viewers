@@ -173,16 +173,20 @@ int main(int ac, char** av)
 	}
 
 	std::string plyfile = myArgs.modelPath.get();
+	std::string modelPath;
 	if (plyfile.back() != '/')
 		plyfile += "/";
+	modelPath = plyfile + "point_cloud_object_removal";
 	plyfile += "point_cloud";
 	if (!myArgs.iteration.isInit())
 	{
 		plyfile += "/" + findLargestNumberedSubdirectory(plyfile) + "/point_cloud.ply";
+		modelPath += "/" + findLargestNumberedSubdirectory(modelPath) + "/classifier.onnx";
 	}
 	else
 	{
 		plyfile += "/iteration_" + myArgs.iteration.get() + "/point_cloud.ply";
+		modelPath += "/iteration_" + myArgs.iteration.get() + "/classifier.onnx";
 	}
 
 	// Setup the scene: load the proxy, create the texture arrays.
@@ -212,7 +216,7 @@ int main(int ac, char** av)
 	const unsigned int sceneResHeight = usedResolution.y();
 
 	// Create the ULR view.
-	GaussianView::Ptr	gaussianView(new GaussianView(scene, sceneResWidth, sceneResHeight, plyfile.c_str(), &messageRead, sh_degree, white_background, !myArgs.noInterop, device));
+	GaussianView::Ptr	gaussianView(new GaussianView(scene, sceneResWidth, sceneResHeight, plyfile.c_str(), modelPath.c_str(), &messageRead, sh_degree, white_background, !myArgs.noInterop, device));
 
 	// Raycaster.
 	std::shared_ptr<sibr::Raycaster> raycaster = std::make_shared<sibr::Raycaster>();

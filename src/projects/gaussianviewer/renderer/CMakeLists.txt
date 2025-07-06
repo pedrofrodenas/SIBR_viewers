@@ -15,6 +15,25 @@ sibr_gitlibrary(TARGET CudaRasterizer
     GIT_TAG			"255c532d5fd0c3d83afec0e8e49574b65ae381bd"
 )
 
+include(FetchContent)
+if (WIN32)
+	FetchContent_Declare(
+			onnxruntime
+			URL https://github.com/microsoft/onnxruntime/releases/download/v1.16.3/onnxruntime-win-x64-1.16.3.zip
+			# For Windows: onnxruntime-win-x64-1.16.3.zip
+			# For macOS: onnxruntime-osx-x64-1.16.3.tgz
+	)
+else ()
+	FetchContent_Declare(
+			onnxruntime
+			URL https://github.com/microsoft/onnxruntime/releases/download/v1.16.3/onnxruntime-linux-x64-1.16.3.tgz
+			# For Windows:
+			# For macOS: onnxruntime-osx-x64-1.16.3.tgz
+	)
+endif()
+
+FetchContent_MakeAvailable(onnxruntime)
+
 find_package(CUDAToolkit REQUIRED)
 
 file(GLOB SOURCES "*.cpp" "*.h" "*.hpp")
@@ -28,7 +47,35 @@ file(GLOB SOURCES "*.cpp" "*.h" "*.hpp" "shaders/*.frag" "shaders/*.vert" "shade
 ## Specify target rules
 add_library(${PROJECT_NAME} SHARED ${SOURCES})
 
-include_directories(${Boost_INCLUDE_DIRS} .)
+target_link_directories(${PROJECT_NAME} PRIVATE ${onnxruntime_SOURCE_DIR}/lib)
+
+if (WIN32)
+	set(ONNXRUNTIME_LIB ${onnxruntime_SOURCE_DIR}/lib/onnxruntime.lib)
+else()
+	set(ONNXRUNTIME_LIB ${onnxruntime_SOURCE_DIR}/lib/libonnxruntime.so)
+endif()
+
+set(ONNXRUNTIME_INCLUDE_DIRS)
+if(EXISTS "${onnxruntime_SOURCE_DIR}/include")
+	list(APPEND ONNXRUNTIME_INCLUDE_DIRS "${onnxruntime_SOURCE_DIR}/include")
+endif()
+
+# Print found include directories
+foreach(dir ${ONNXRUNTIME_INCLUDE_DIRS})
+	message(STATUS "Found ONNX Runtime include directory: ${dir}")
+endforeach()
+
+# Verify the library exists
+if(NOT EXISTS ${ONNXRUNTIME_LIB})
+	message(FATAL_ERROR "ONNX Runtime library not found at: ${ONNXRUNTIME_LIB}")
+endif()
+
+target_include_directories(${PROJECT_NAME} PUBLIC
+		${Boost_INCLUDE_DIRS}
+		${ONNXRUNTIME_INCLUDE_DIRS}
+		.
+)
+
 if (WIN32)
 target_link_libraries(${PROJECT_NAME}
 	${Boost_LIBRARIES}
@@ -44,6 +91,7 @@ target_link_libraries(${PROJECT_NAME}
 	sibr_basic
 	CUDA::cudart
 	CudaRasterizer
+	${ONNXRUNTIME_LIB}
 )
 else()
 target_link_libraries(${PROJECT_NAME}
@@ -60,6 +108,7 @@ target_link_libraries(${PROJECT_NAME}
 	sibr_basic
 	CUDA::cudart
 	CudaRasterizer
+	${ONNXRUNTIME_LIB}
 )
 endif()
 

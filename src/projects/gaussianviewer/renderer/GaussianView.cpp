@@ -492,7 +492,7 @@ std::function<char* (size_t N)> resizeFunctional(void** ptr, size_t& S) {
 	return lambda;
 }
 
-sibr::GaussianView::GaussianView(const sibr::BasicIBRScene::Ptr & ibrScene, uint render_w, uint render_h, const char* file, bool* messageRead, int sh_degree, bool white_bg, bool useInterop, int device) :
+sibr::GaussianView::GaussianView(const sibr::BasicIBRScene::Ptr & ibrScene, uint render_w, uint render_h, const char* file, const char* modelPath, bool* messageRead, int sh_degree, bool white_bg, bool useInterop, int device) :
 	_scene(ibrScene),
 	_dontshow(messageRead),
 	_sh_degree(sh_degree),
@@ -565,6 +565,16 @@ sibr::GaussianView::GaussianView(const sibr::BasicIBRScene::Ptr & ibrScene, uint
 	_originalPos = pos;
 
 	backupOriginalData(pos, rot, scale, opacity, shs, objectData);
+
+	// Load ONNX Classifier if exists
+	std::ifstream infile(modelPath, std::ios_base::binary);
+	if (!infile.good())
+		SIBR_WRG << "Unable to find ONNX model file, attempted:\n" << modelPath << std::endl;
+	else
+	{
+		classifier = std::make_unique<GaussianClassifier>(modelPath);
+	}
+
 
 	// Allocate and fill the GPU data
 	CUDA_SAFE_CALL_ALWAYS(cudaMalloc((void**)&pos_cuda, sizeof(Pos) * P));

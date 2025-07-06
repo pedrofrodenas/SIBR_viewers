@@ -25,6 +25,7 @@
 #include <cuda_gl_interop.h>
 #include <functional>
 # include "GaussianSurfaceRenderer.hpp"
+#include "GaussianClassifier.hpp"
 
 struct Scale
 {
@@ -90,7 +91,7 @@ namespace sibr {
 		 * \param render_w rendering width
 		 * \param render_h rendering height
 		 */
-		GaussianView(const sibr::BasicIBRScene::Ptr& ibrScene, uint render_w, uint render_h, const char* file, bool* message_read, int sh_degree, bool white_bg = false, bool useInterop = true, int device = 0);
+		GaussianView(const sibr::BasicIBRScene::Ptr& ibrScene, uint render_w, uint render_h, const char* file, const char* modelPath, bool* message_read, int sh_degree, bool white_bg = false, bool useInterop = true, int device = 0);
 
 		/** Replace the current scene.
 		 *\param newScene the new scene to render */
@@ -175,6 +176,7 @@ namespace sibr {
 		float* fallbackBufferCuda = nullptr;
 		bool accepted = false;
 
+		std::unique_ptr<GaussianClassifier> classifier;
 		bool _removeGaussians= false;
 		bool _restoreOriginal = false;
 

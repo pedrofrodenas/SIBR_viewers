@@ -27,48 +27,8 @@
 # include "GaussianSurfaceRenderer.hpp"
 #include "GaussianClassifier.hpp"
 
-struct Scale
-{
-	float scale[3];
-};
-struct Objects
-{
-	float objects[16];
-};
+#include <projects/gaussianviewer/renderer/GaussianStructures.hpp>
 
-typedef sibr::Vector3f Pos;
-template<int D>
-struct SHs
-{
-	float shs[(D+1)*(D+1)*3];
-};
-
-struct Rot
-{
-	float rot[4];
-};
-template<int D>
-struct RichPoint
-{
-	Pos pos;
-	float n[3];
-	SHs<D> shs;
-	float opacity;
-	Scale scale;
-	Rot rot;
-};
-
-template<int D>
-struct ExtendedRichPoint
-{
-	Pos pos;
-	float n[3];
-	SHs<D> shs;
-	float opacity;
-	Scale scale;
-	Rot rot;
-	float obj_dc[16];  // New: object-specific data
-};
 
 namespace CudaRasterizer
 {

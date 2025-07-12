@@ -31,6 +31,11 @@ struct Scale
 {
 	float scale[3];
 };
+struct Objects
+{
+	float objects[16];
+};
+
 typedef sibr::Vector3f Pos;
 template<int D>
 struct SHs
@@ -123,11 +128,13 @@ namespace sibr {
 		void backupOriginalData(std::vector<Pos>& pos, std::vector<Rot>& rot, std::vector<Scale>& scale,
 			std::vector<float>& opacity,
 			std::vector<SHs<3>>& shs,
-			std::vector<std::vector<float>>& od
+			std::vector<Objects>& od
 			);
 
 		template<int D>
 		void restoreOriginalData();
+
+		void SegmentGaussians();
 
 		/** \return a reference to the scene */
 		const std::shared_ptr<sibr::BasicIBRScene> & getScene() const { return _scene; }
@@ -154,6 +161,7 @@ namespace sibr {
 		float* scale_cuda;
 		float* opacity_cuda;
 		float* shs_cuda;
+		float* obj_cuda;
 		int* rect_cuda;
 
 		GLuint imageBuffer;
@@ -185,7 +193,7 @@ namespace sibr {
 		std::vector<Rot> _originalRot;
 		std::vector<Scale> _originalScale;
 		std::vector<float> _originalOpacity;
-		std::vector<std::vector<float>> _original_objectData;
+		std::vector<Objects> _original_objectData;
 		std::vector<SHs<3>> _originalShs;  // Raw bytes storage
 		int _originalCount;
 

@@ -50,7 +50,7 @@ int loadPlyExtended(const char* filename,
     std::vector<float>& opacities,
     std::vector<Scale>& scales,
     std::vector<Rot>& rot,
-    std::vector<std::vector<float>>& obj_data,  // New: object data output
+    std::vector<Objects>& obj_data,  // Modified: now uses Objects struct
     sibr::Vector3f& minn,
     sibr::Vector3f& maxx)
 {
@@ -98,7 +98,7 @@ int loadPlyExtended(const char* filename,
         scales.resize(count);
         rot.resize(count);
         opacities.resize(count);
-        obj_data.resize(count, std::vector<float>(16));  // 16 obj_dc values per point
+        obj_data.resize(count);  // Modified: resize to count Objects
 
         // Calculate bounding box for Morton ordering
         minn = sibr::Vector3f(FLT_MAX, FLT_MAX, FLT_MAX);
@@ -162,9 +162,9 @@ int loadPlyExtended(const char* filename,
                 shs[k].shs[j * 3 + 2] = points[i].shs.shs[(j - 1) + 2 * SH_N + 1];
             }
 
-            // Copy object data
+            // Copy object data - Modified: copy to Objects struct
             for (int j = 0; j < 16; j++) {
-                obj_data[k][j] = points[i].obj_dc[j];
+                obj_data[k].objects[j] = points[i].obj_dc[j];
             }
         }
     } else {
@@ -538,7 +538,8 @@ sibr::GaussianView::GaussianView(const sibr::BasicIBRScene::Ptr & ibrScene, uint
 	std::vector<float> opacity;
 	std::vector<SHs<3>> shs;
 
-	std::vector<std::vector<float>> objectData;  // NEW: For obj_dc_0 to obj_dc_15
+	std::vector<Objects> objectData;
+
 
 	if (sh_degree == 0)
 	{
@@ -588,6 +589,7 @@ sibr::GaussianView::GaussianView(const sibr::BasicIBRScene::Ptr & ibrScene, uint
 	CUDA_SAFE_CALL_ALWAYS(cudaMalloc((void**)&scale_cuda, sizeof(Scale) * P));
 	CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(scale_cuda, scale.data(), sizeof(Scale) * P, cudaMemcpyHostToDevice));
 
+
 	// Create space for view parameters
 	CUDA_SAFE_CALL_ALWAYS(cudaMalloc((void**)&view_cuda, sizeof(sibr::Matrix4f)));
 	CUDA_SAFE_CALL_ALWAYS(cudaMalloc((void**)&proj_cuda, sizeof(sibr::Matrix4f)));
@@ -610,6 +612,15 @@ sibr::GaussianView::GaussianView(const sibr::BasicIBRScene::Ptr & ibrScene, uint
 	// Create GL buffer ready for CUDA/GL interop
 	glCreateBuffers(1, &imageBuffer);
 	glNamedBufferStorage(imageBuffer, render_w * render_h * 3 * sizeof(float), nullptr, GL_DYNAMIC_STORAGE_BIT);
+
+	if (!objectData.empty()) {
+		CUDA_SAFE_CALL_ALWAYS(cudaMalloc((void**)&obj_cuda, sizeof(Objects) * count));
+		CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(obj_cuda, objectData.data(),
+										 sizeof(Objects) * count, cudaMemcpyHostToDevice));
+	} else {
+		obj_cuda = nullptr;
+		SIBR_LOG << "No object data found in PLY file, obj_cuda set to nullptr" << std::endl;
+	}
 
 	if (useInterop)
 	{
@@ -653,7 +664,7 @@ void sibr::GaussianView::backupOriginalData(
 	std::vector<Scale>& scale,
 	std::vector<float>& opacity,
 	std::vector<SHs<3>>& shs,
-	std::vector<std::vector<float>>& od)
+	std::vector<Objects>& od)
 {
 	// Store regular data
 	_originalPos = pos;
@@ -785,6 +796,25 @@ void sibr::GaussianView::removeHalfGaussians()
     SIBR_LOG << "Reduced Gaussians from " << (count * 2) << " to " << count << std::endl;
 }
 
+void sibr::GaussianView::SegmentGaussians()
+{
+	// Step 1: Copy data from GPU to CPU
+	std::vector<Pos> pos(count);
+	std::vector<Rot> rot(count);
+	std::vector<Scale> scale(count);
+	std::vector<float> opacity(count);
+	std::vector<SHs<3>> shs(count);
+
+	CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(pos.data(), pos_cuda, sizeof(Pos) * count, cudaMemcpyDeviceToHost));
+	CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(rot.data(), rot_cuda, sizeof(Rot) * count, cudaMemcpyDeviceToHost));
+	CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(scale.data(), scale_cuda, sizeof(Scale) * count, cudaMemcpyDeviceToHost));
+	CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(opacity.data(), opacity_cuda, sizeof(float) * count, cudaMemcpyDeviceToHost));
+	CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(shs.data(), shs_cuda, sizeof(SHs<3>) * count, cudaMemcpyDeviceToHost));
+
+	SIBR_LOG << "Gaussians have been segmented " << (count * 2) << " to " << count << std::endl;
+
+}
+
 void sibr::GaussianView::onRenderIBR(sibr::IRenderTarget & dst, const sibr::Camera & eye)
 {
 	if (currMode == "Ellipsoids")
@@ -859,6 +889,11 @@ void sibr::GaussianView::onRenderIBR(sibr::IRenderTarget & dst, const sibr::Came
 			boxmax
 		);
 
+		if (cudaPeekAtLastError() != cudaSuccess)
+		{
+			SIBR_ERR << "A error ocurred after the Rasterization";
+		}
+
 		if (!_interop_failed)
 		{
 			// Unmap OpenGL resource for use with OpenGL
@@ -899,6 +934,10 @@ void sibr::GaussianView::onGUI()
 		{
 			restoreOriginalData();
 			_restoreOriginal = false;
+		}
+		if (ImGui::Button("Segment Gaussians"))
+		{
+			SegmentGaussians(); // Call your function here
 		}
 		ImGui::End();
 	}
@@ -989,6 +1028,11 @@ sibr::GaussianView::~GaussianView()
 	cudaFree(scale_cuda);
 	cudaFree(opacity_cuda);
 	cudaFree(shs_cuda);
+
+	if (obj_cuda) {
+		cudaFree(obj_cuda);
+		obj_cuda = nullptr;
+	}
 
 	cudaFree(view_cuda);
 	cudaFree(proj_cuda);

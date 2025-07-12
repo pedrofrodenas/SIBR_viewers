@@ -39,3 +39,41 @@ GaussianClassifier::GaussianClassifier(const std::string& onnx_path)
         std::cout << "Output Name in " << i << " : " << outputName.get() << std::endl;
     }
 }
+
+void GaussianClassifier::processGaussians(std::vector<Objects>& objectData, std::vector<std::vector<float>>& logits)
+{
+    size_t count = objectData.size();
+
+    // Prepare input data
+    std::vector<float> input_data(16 * count);
+    for (size_t i = 0; i < 16; ++i) {
+        for (size_t j = 0; j < count; ++j) {
+            input_data[i * count + j] = objectData[j].objects[i];
+        }
+    }
+
+    // Create input tensor
+    std::vector<int64_t> input_shape = {16, static_cast<int64_t>(count), 1};
+    Ort::MemoryInfo memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+    Ort::Value input_tensor = Ort::Value::CreateTensor<float>(memory_info, input_data.data(), input_data.size(), input_shape.data(), input_shape.size());
+
+    // Define input and output names
+    const char* input_names[] = {"input.1"};
+    const char* output_names[] = {"8"};
+
+    // Run inference
+    auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names, &input_tensor, 1, output_names, 1);
+
+    // Extract output tensor
+    Ort::Value& output_tensor = output_tensors[0];
+    const float* output_data = output_tensor.GetTensorData<float>();
+
+    // Populate logits
+    logits.resize(count);
+    for (size_t j = 0; j < count; ++j) {
+        logits[j].resize(6);
+        for (size_t k = 0; k < 6; ++k) {
+            logits[j][k] = output_data[k * count + j];
+        }
+    }
+}

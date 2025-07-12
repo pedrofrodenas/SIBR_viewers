@@ -814,15 +814,30 @@ void sibr::GaussianView::SegmentGaussians()
 	std::vector<Scale> scale(count);
 	std::vector<float> opacity(count);
 	std::vector<SHs<3>> shs(count);
+	std::vector<Objects> objectData(count);
 
 	CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(pos.data(), pos_cuda, sizeof(Pos) * count, cudaMemcpyDeviceToHost));
 	CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(rot.data(), rot_cuda, sizeof(Rot) * count, cudaMemcpyDeviceToHost));
 	CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(scale.data(), scale_cuda, sizeof(Scale) * count, cudaMemcpyDeviceToHost));
 	CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(opacity.data(), opacity_cuda, sizeof(float) * count, cudaMemcpyDeviceToHost));
 	CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(shs.data(), shs_cuda, sizeof(SHs<3>) * count, cudaMemcpyDeviceToHost));
+	CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(objectData.data(), obj_cuda, sizeof(Objects) * count, cudaMemcpyDeviceToHost));
+
+	// Optional: Print object data for debugging
+	// int object_index = 0;
+	// for (const auto& obj : objectData) {
+	// 	std::cout << "Object " << object_index++ << ": [ ";
+	// 	for (int i = 0; i < 16; ++i) {
+	// 		std::cout << obj.objects[i] << " ";
+	// 	}
+	// 	std::cout << "]" << std::endl;
+	// }
+
+	// Step 2: Perform inference
+	std::vector<std::vector<float>> logits;
+	classifier->processGaussians(objectData, logits);
 
 	SIBR_LOG << "Gaussians have been segmented " << (count * 2) << " to " << count << std::endl;
-
 }
 
 void sibr::GaussianView::onRenderIBR(sibr::IRenderTarget & dst, const sibr::Camera & eye)

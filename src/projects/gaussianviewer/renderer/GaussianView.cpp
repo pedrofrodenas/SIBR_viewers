@@ -675,7 +675,7 @@ void sibr::GaussianView::backupOriginalData(
 	_originalShs = shs;
 
 	// Store DC data if needed
-	_original_objectData = od; // You might need to handle this similarly
+	_original_objectData = od;
 }
 
 void sibr::GaussianView::restoreOriginalData()
@@ -692,6 +692,7 @@ void sibr::GaussianView::restoreOriginalData()
     cudaFree(scale_cuda);
     cudaFree(opacity_cuda);
     cudaFree(shs_cuda);
+	cudaFree(obj_cuda);
 
     // Step 2: Restore count to original
     count = _originalCount;
@@ -709,6 +710,15 @@ void sibr::GaussianView::restoreOriginalData()
     CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(scale_cuda, _originalScale.data(), sizeof(Scale) * count, cudaMemcpyHostToDevice));
     CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(opacity_cuda, _originalOpacity.data(), sizeof(float) * count, cudaMemcpyHostToDevice));
     CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(shs_cuda, _originalShs.data(), sizeof(SHs<3>) * count, cudaMemcpyHostToDevice));
+
+	if (!_original_objectData.empty()) {
+		CUDA_SAFE_CALL_ALWAYS(cudaMalloc((void**)&obj_cuda, sizeof(Objects) * count));
+		CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(obj_cuda, _original_objectData.data(),
+										 sizeof(Objects) * count, cudaMemcpyHostToDevice));
+	} else {
+		obj_cuda = nullptr;
+		SIBR_LOG << "No object data found in original object data, obj_cuda set to nullptr" << std::endl;
+	}
 
     // Step 5: Update GaussianData object if needed
     if (gData) {

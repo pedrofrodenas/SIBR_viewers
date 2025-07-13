@@ -150,6 +150,7 @@ namespace sibr {
 		std::unique_ptr<GaussianClassifier> classifier;
 		bool _removeGaussians= false;
 		bool _restoreOriginal = false;
+		bool objData;
 
 		// Original Data Backup
 		std::vector<Pos> _originalPos;

@@ -60,7 +60,48 @@ Eigen::MatrixXf removeOutliers(const Eigen::MatrixXf& points, float outlier_fact
     return filtered_points;
 }
 
-void PointsInsideConvexHull(std::vector<Pos>& pos, Eigen::Matrix<float, 1, Eigen::Dynamic, Eigen::RowMajor>& mask3d)
+Eigen::Array<bool, Eigen::Dynamic, 1> points_inside_convex_hull(
+    const Eigen::MatrixXf& point_cloud,
+    const Eigen::MatrixXf& filtered_masked_points
+) {
+    using namespace Eigen;
+
+    // Handle degenerate cases with insufficient points
+    if (filtered_masked_points.rows() < 4) {
+        return Array<bool, Dynamic, 1>::Constant(point_cloud.rows(), false);
+    }
+
+    // Convert to CGAL points
+    std::vector<Point_3> cgal_points;
+    cgal_points.reserve(filtered_masked_points.rows());
+    for (int i = 0; i < filtered_masked_points.rows(); ++i) {
+        cgal_points.push_back(Point_3(
+            filtered_masked_points(i, 0),
+            filtered_masked_points(i, 1),
+            filtered_masked_points(i, 2)
+        ));
+    }
+
+    // Build Delaunay triangulation
+    Delaunay dt(cgal_points.begin(), cgal_points.end());
+
+    // Create result array and check point inclusion
+    Array<bool, Dynamic, 1> inside_mask(point_cloud.rows());
+    for (int i = 0; i < point_cloud.rows(); ++i) {
+        Point_3 p(point_cloud(i, 0), point_cloud(i, 1), point_cloud(i, 2));
+        Delaunay::Locate_type lt;
+        int li, lj;
+        Delaunay::Cell_handle c = dt.locate(p, lt, li, lj);
+
+        // Points are inside unless they're outside convex/affine hull
+        inside_mask[i] = !(lt == Delaunay::OUTSIDE_CONVEX_HULL ||
+                          lt == Delaunay::OUTSIDE_AFFINE_HULL);
+    }
+
+    return inside_mask;
+}
+
+Eigen::Array<bool, Eigen::Dynamic, 1> PointsInsideConvexHull(std::vector<Pos>& pos, Eigen::Matrix<float, 1, Eigen::Dynamic, Eigen::RowMajor>& mask3d)
 {
 
     Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> xyzCoords(
@@ -70,7 +111,6 @@ void PointsInsideConvexHull(std::vector<Pos>& pos, Eigen::Matrix<float, 1, Eigen
     );
 
     int num_selected = mask3d.count();
-    std::cout << "Count of elements to use " << num_selected << std::endl;
 
     Eigen::MatrixXf maskedPoints(num_selected, xyzCoords.cols());
 
@@ -87,14 +127,13 @@ void PointsInsideConvexHull(std::vector<Pos>& pos, Eigen::Matrix<float, 1, Eigen
     Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> filtered_masked_points;
 
     if (remove_outliers) {
-        std::cout << "\nRemoving outliers..." << std::endl;
         filtered_masked_points = removeOutliers(maskedPoints, outlier_factor);
     } else {
         filtered_masked_points = maskedPoints;
     }
 
-    std::cout << "\nFinal filtered points shape: " << filtered_masked_points.rows()
-              << " x " << filtered_masked_points.cols() << std::endl;
+    Eigen::Array<bool, Eigen::Dynamic, 1> inside_mask =
+        points_inside_convex_hull(xyzCoords, filtered_masked_points);
 
-    std::cout << "Hola Mundo" << std::endl;
+    return inside_mask;
 }

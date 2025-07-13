@@ -617,8 +617,10 @@ sibr::GaussianView::GaussianView(const sibr::BasicIBRScene::Ptr & ibrScene, uint
 		CUDA_SAFE_CALL_ALWAYS(cudaMalloc((void**)&obj_cuda, sizeof(Objects) * count));
 		CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(obj_cuda, objectData.data(),
 										 sizeof(Objects) * count, cudaMemcpyHostToDevice));
+		objData = true;
 	} else {
 		obj_cuda = nullptr;
+		objData = false;
 		SIBR_LOG << "No object data found in PLY file, obj_cuda set to nullptr" << std::endl;
 	}
 
@@ -808,6 +810,12 @@ void sibr::GaussianView::removeHalfGaussians()
 
 void sibr::GaussianView::SegmentGaussians()
 {
+	if (objData == false)
+	{
+		SIBR_WRG << "The dataset format doesn't support object removal!. Please train splats using Gaussian Grouping Repository" << std::endl;
+		return;
+	}
+
 	// Step 1: Copy data from GPU to CPU
 	std::vector<Pos> pos(count);
 	std::vector<Rot> rot(count);
@@ -827,8 +835,6 @@ void sibr::GaussianView::SegmentGaussians()
 	Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> logits;
 	classifier->processGaussians(objectData, logits);
 
-	std::cout << "First row: " << logits.col(0) << std::endl;
-
 	int selected_obj_ids = 2;
 	float removal_thresh = 0.5f;
 
@@ -837,15 +843,74 @@ void sibr::GaussianView::SegmentGaussians()
 
 	Eigen::Matrix<float, 1, Eigen::Dynamic, Eigen::RowMajor> float_mask = mask.cast<float>();
 
-	std::cout << "Number of gaussians meeting threshold: " << mask.count() << std::endl;
-	std::cout << "Number of rows: " << mask.rows() << std::endl;
-	std::cout << "Number of columns: " << mask.cols() << std::endl;
+	Eigen::Array<bool, Eigen::Dynamic, 1> mask3dConvex = PointsInsideConvexHull(pos, float_mask);
 
-	PointsInsideConvexHull(pos, float_mask);
-
+	Eigen::Array<bool, Eigen::Dynamic, 1> mask_transposed = mask.transpose();
+	Eigen::Array<bool, Eigen::Dynamic, 1> mask3d = mask_transposed || mask3dConvex;
 
 
-	SIBR_LOG << "Gaussians have been segmented " << (count * 2) << " to " << count << std::endl;
+	// Step 3: Filter out gaussians where mask3d is True
+	std::vector<Pos> filtered_pos;
+	std::vector<Rot> filtered_rot;
+	std::vector<Scale> filtered_scale;
+	std::vector<float> filtered_opacity;
+	std::vector<SHs<3>> filtered_shs;
+	std::vector<Objects> filtered_objectData;
+
+	filtered_pos.reserve(count);
+	filtered_rot.reserve(count);
+	filtered_scale.reserve(count);
+	filtered_opacity.reserve(count);
+	filtered_shs.reserve(count);
+	filtered_objectData.reserve(count);
+
+	for (int i = 0; i < count; ++i) {
+		if (!mask3d[i]) { // Keep gaussians where mask3d is False
+			filtered_pos.push_back(pos[i]);
+			filtered_rot.push_back(rot[i]);
+			filtered_scale.push_back(scale[i]);
+			filtered_opacity.push_back(opacity[i]);
+			filtered_shs.push_back(shs[i]);
+			filtered_objectData.push_back(objectData[i]);
+		}
+	}
+
+	// Update count to reflect new size
+	int new_count = filtered_pos.size();
+
+	SIBR_LOG << "Number of gaussians after filtering: " << new_count << std::endl;
+
+	if (new_count > 0) {
+		// Reallocate GPU memory with new size
+		CUDA_SAFE_CALL_ALWAYS(cudaFree(pos_cuda));
+		CUDA_SAFE_CALL_ALWAYS(cudaFree(rot_cuda));
+		CUDA_SAFE_CALL_ALWAYS(cudaFree(scale_cuda));
+		CUDA_SAFE_CALL_ALWAYS(cudaFree(opacity_cuda));
+		CUDA_SAFE_CALL_ALWAYS(cudaFree(shs_cuda));
+		CUDA_SAFE_CALL_ALWAYS(cudaFree(obj_cuda));
+
+		CUDA_SAFE_CALL_ALWAYS(cudaMalloc(&pos_cuda, sizeof(Pos) * new_count));
+		CUDA_SAFE_CALL_ALWAYS(cudaMalloc(&rot_cuda, sizeof(Rot) * new_count));
+		CUDA_SAFE_CALL_ALWAYS(cudaMalloc(&scale_cuda, sizeof(Scale) * new_count));
+		CUDA_SAFE_CALL_ALWAYS(cudaMalloc(&opacity_cuda, sizeof(float) * new_count));
+		CUDA_SAFE_CALL_ALWAYS(cudaMalloc(&shs_cuda, sizeof(SHs<3>) * new_count));
+		CUDA_SAFE_CALL_ALWAYS(cudaMalloc(&obj_cuda, sizeof(Objects) * new_count));
+
+		// Copy filtered data back to GPU
+		CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(pos_cuda, filtered_pos.data(), sizeof(Pos) * new_count, cudaMemcpyHostToDevice));
+		CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(rot_cuda, filtered_rot.data(), sizeof(Rot) * new_count, cudaMemcpyHostToDevice));
+		CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(scale_cuda, filtered_scale.data(), sizeof(Scale) * new_count, cudaMemcpyHostToDevice));
+		CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(opacity_cuda, filtered_opacity.data(), sizeof(float) * new_count, cudaMemcpyHostToDevice));
+		CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(shs_cuda, filtered_shs.data(), sizeof(SHs<3>) * new_count, cudaMemcpyHostToDevice));
+		CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(obj_cuda, filtered_objectData.data(), sizeof(Objects) * new_count, cudaMemcpyHostToDevice));
+
+		// Update the count
+		count = new_count;
+	} else {
+		// Handle case where all gaussians are removed
+		SIBR_WRG << "Warning: All gaussians were removed!" << std::endl;
+		count = 0;
+	}
 }
 
 void sibr::GaussianView::onRenderIBR(sibr::IRenderTarget & dst, const sibr::Camera & eye)

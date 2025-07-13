@@ -112,6 +112,24 @@ target_link_libraries(${PROJECT_NAME}
 )
 endif()
 
+#if (NOT WIN32)
+#	install(FILES ${onnxruntime_SOURCE_DIR}/lib/libonnxruntime.so.1.16.3
+#			DESTINATION bin)
+#endif()
+
+if (NOT WIN32)
+	# Install the shared library with proper permissions
+	install(FILES ${onnxruntime_SOURCE_DIR}/lib/libonnxruntime.so.1.16.3
+			DESTINATION bin
+			PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
+			GROUP_READ GROUP_EXECUTE
+			WORLD_READ WORLD_EXECUTE)
+
+	# Alternative approach using install(PROGRAMS) which automatically sets execute permissions
+	# install(PROGRAMS ${onnxruntime_SOURCE_DIR}/lib/libonnxruntime.so.1.16.3
+	#       DESTINATION bin)
+endif()
+
 add_definitions( -DSIBR_EXP_ULR_EXPORTS -DBOOST_ALL_DYN_LINK  )
 
 set_target_properties(${PROJECT_NAME} PROPERTIES FOLDER "projects/${SIBR_PROJECT}/renderer")
@@ -122,7 +140,6 @@ ibr_install_target(${PROJECT_NAME}
     INSTALL_PDB                         ## mean install also MSVC IDE *.pdb file (DEST according to target type)
 	SHADERS ${SHADERS}
 	RSC_FOLDER ${SIBR_PROJECT}
-
     #STANDALONE  ${INSTALL_STANDALONE}   ## mean call install_runtime with bundle dependencies resolution
     COMPONENT   ${PROJECT_NAME}_install ## will create custom target to install only this project
 )

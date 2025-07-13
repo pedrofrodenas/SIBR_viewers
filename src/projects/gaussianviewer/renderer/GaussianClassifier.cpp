@@ -92,7 +92,7 @@ void GaussianClassifier::processGaussians(std::vector<Objects>& objectData, Eige
     Ort::Value input_tensor = Ort::Value::CreateTensor<float>(memory_info, input_data.data(), input_data.size(), input_shape.data(), input_shape.size());
 
     // Define input and output names
-    const char* input_names[] = {"input.1"};
+    const char* input_names[] = {"input"};
     const char* output_names[] = {"8"};
 
     // Run inference

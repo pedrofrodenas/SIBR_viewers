@@ -808,7 +808,7 @@ void sibr::GaussianView::removeHalfGaussians()
     SIBR_LOG << "Reduced Gaussians from " << (count * 2) << " to " << count << std::endl;
 }
 
-void sibr::GaussianView::SegmentGaussians(int selectedObjId, float removalThreshold)
+void sibr::GaussianView::SegmentGaussians(int selectedObjId, float removalThreshold, bool filterbyConvexHull)
 {
 	if (objData == false)
 	{
@@ -835,15 +835,22 @@ void sibr::GaussianView::SegmentGaussians(int selectedObjId, float removalThresh
 	Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> logits;
 	classifier->processGaussians(objectData, logits);
 
+
 	Eigen::Matrix<bool, 1, Eigen::Dynamic, Eigen::RowMajor> mask;
 	mask = (logits.row(selectedObjId).array() > removalThreshold);
 
-	Eigen::Matrix<float, 1, Eigen::Dynamic, Eigen::RowMajor> float_mask = mask.cast<float>();
-
-	Eigen::Array<bool, Eigen::Dynamic, 1> mask3dConvex = PointsInsideConvexHull(pos, float_mask);
-
-	Eigen::Array<bool, Eigen::Dynamic, 1> mask_transposed = mask.transpose();
-	Eigen::Array<bool, Eigen::Dynamic, 1> mask3d = mask_transposed || mask3dConvex;
+	Eigen::Array<bool, Eigen::Dynamic, 1> mask3d;
+	if (filterbyConvexHull)
+	{
+		Eigen::Matrix<float, 1, Eigen::Dynamic, Eigen::RowMajor> float_mask = mask.cast<float>();
+		Eigen::Array<bool, Eigen::Dynamic, 1> mask3dConvex = PointsInsideConvexHull(pos, float_mask);
+		Eigen::Array<bool, Eigen::Dynamic, 1> mask_transposed = mask.transpose();
+		mask3d = mask_transposed || mask3dConvex;
+	}
+	else
+	{
+		mask3d = mask.transpose();
+	}
 
 
 	// Step 3: Filter out gaussians where mask3d is True
@@ -1031,9 +1038,10 @@ void sibr::GaussianView::onGUI()
 		{
 			ImGui::InputInt("ID Object to Segment", &objSegmentID);
 			ImGui::SliderFloat("Segmentation Threshold", &segmentationThreshold, 0.0f, 1.0f);
+			ImGui::Checkbox("Filter by 3D ConvexHull", &filterbyConvexHull);
 			if (ImGui::Button("Segment Gaussians"))
 			{
-				SegmentGaussians(objSegmentID, segmentationThreshold); // Call your function here
+				SegmentGaussians(objSegmentID, segmentationThreshold, filterbyConvexHull); // Call your function here
 			}
 		}
 		ImGui::End();

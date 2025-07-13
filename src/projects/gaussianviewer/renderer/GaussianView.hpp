@@ -97,7 +97,7 @@ namespace sibr {
 		template<int D>
 		void restoreOriginalData();
 
-		void SegmentGaussians(int selectedObjId, float removalThreshold);
+		void SegmentGaussians(int selectedObjId, float removalThreshold, bool filterbyConvexHull);
 
 		/** \return a reference to the scene */
 		const std::shared_ptr<sibr::BasicIBRScene> & getScene() const { return _scene; }
@@ -151,6 +151,7 @@ namespace sibr {
 		bool showSegmentationOptions=false;
 		float segmentationThreshold = 0.5f;
 		int objSegmentID = 1;
+		bool filterbyConvexHull = true;
 		bool objData;
 
 		// Original Data Backup

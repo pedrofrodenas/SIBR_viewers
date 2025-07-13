@@ -1021,17 +1021,13 @@ void sibr::GaussianView::onGUI()
 	const std::string editName = "3D Gaussians Edit";
 	if (ImGui::Begin(editName.c_str()))
 	{
-		ImGui::Checkbox("Remove Half Gaussians", &_removeGaussians);
-		if (_removeGaussians)
+		if (ImGui::Button("Remove Half Gaussians"))
 		{
-			removeHalfGaussians();
-			_removeGaussians = false;
+			removeHalfGaussians(); // Call your function here
 		}
-		ImGui::Checkbox("Restore Original Data", &_restoreOriginal);
-		if (_restoreOriginal)
+		if (ImGui::Button("Restore Original Data"))
 		{
-			restoreOriginalData();
-			_restoreOriginal = false;
+			restoreOriginalData(); // Call your function here
 		}
 		if (ImGui::Button("Segment Gaussians"))
 		{

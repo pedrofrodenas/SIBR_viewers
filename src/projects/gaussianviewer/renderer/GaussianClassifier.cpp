@@ -16,10 +16,6 @@ GaussianClassifier::GaussianClassifier(const std::string& onnx_path)
     session_ = std::make_unique<Ort::Session>(*env_, onnx_path.c_str(), session_options);
 
     Ort::AllocatorWithDefaultOptions allocator;
-    auto input_info = session_->GetInputTypeInfo(0);
-    auto input_tensor_info = input_info.GetTensorTypeAndShapeInfo();
-    auto input_dims = input_tensor_info.GetShape();
-
 
     size_t numInputNodes = session_->GetInputCount();
     size_t numOutputNodes = session_->GetOutputCount();
@@ -27,20 +23,58 @@ GaussianClassifier::GaussianClassifier(const std::string& onnx_path)
     std::cout << "Number of Input Nodes: " << numInputNodes << std::endl;
     std::cout << "Number of Output Nodes: " << numOutputNodes << std::endl;
 
+    // Print input information including shapes
     for (size_t i = 0; i < numInputNodes; i++)
     {
         auto inputName = session_->GetInputNameAllocated(i, allocator);
-        std::cout << "Input Name in " << i << " : " << inputName.get() << std::endl;
+        std::cout << "Input " << i << " Name: " << inputName.get() << std::endl;
+
+        // Get input shape information
+        auto input_info = session_->GetInputTypeInfo(i);
+        auto input_tensor_info = input_info.GetTensorTypeAndShapeInfo();
+        auto input_dims = input_tensor_info.GetShape();
+
+        std::cout << "Input " << i << " Shape: [";
+        for (size_t j = 0; j < input_dims.size(); j++)
+        {
+            std::cout << input_dims[j];
+            if (j < input_dims.size() - 1) std::cout << ", ";
+        }
+        std::cout << "]" << std::endl;
+
+        // Get data type
+        auto input_type = input_tensor_info.GetElementType();
+        std::cout << "Input " << i << " Type: " << input_type << std::endl;
+        std::cout << "---" << std::endl;
     }
 
+    // Print output information including shapes
     for (size_t i = 0; i < numOutputNodes; i++)
     {
         auto outputName = session_->GetOutputNameAllocated(i, allocator);
-        std::cout << "Output Name in " << i << " : " << outputName.get() << std::endl;
+        std::cout << "Output " << i << " Name: " << outputName.get() << std::endl;
+
+        // Get output shape information
+        auto output_info = session_->GetOutputTypeInfo(i);
+        auto output_tensor_info = output_info.GetTensorTypeAndShapeInfo();
+        auto output_dims = output_tensor_info.GetShape();
+
+        std::cout << "Output " << i << " Shape: [";
+        for (size_t j = 0; j < output_dims.size(); j++)
+        {
+            std::cout << output_dims[j];
+            if (j < output_dims.size() - 1) std::cout << ", ";
+        }
+        std::cout << "]" << std::endl;
+
+        // Get data type
+        auto output_type = output_tensor_info.GetElementType();
+        std::cout << "Output " << i << " Type: " << output_type << std::endl;
+        std::cout << "---" << std::endl;
     }
 }
 
-void GaussianClassifier::processGaussians(std::vector<Objects>& objectData, std::vector<std::vector<float>>& logits)
+void GaussianClassifier::processGaussians(std::vector<Objects>& objectData, Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>& logits)
 {
     size_t count = objectData.size();
 
@@ -69,11 +103,11 @@ void GaussianClassifier::processGaussians(std::vector<Objects>& objectData, std:
     const float* output_data = output_tensor.GetTensorData<float>();
 
     // Populate logits
-    logits.resize(count);
-    for (size_t j = 0; j < count; ++j) {
-        logits[j].resize(6);
-        for (size_t k = 0; k < 6; ++k) {
-            logits[j][k] = output_data[k * count + j];
+    logits.resize(6, count);
+    for (size_t k = 0; k < 6; ++k) {
+        for (size_t j = 0; j < count; ++j) {
+            // For tensor shape [6, count, 1], direct mapping: k * count + j
+            logits(k, j) = output_data[k * count + j];
         }
     }
 }

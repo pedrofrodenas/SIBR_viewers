@@ -823,19 +823,19 @@ void sibr::GaussianView::SegmentGaussians()
 	CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(shs.data(), shs_cuda, sizeof(SHs<3>) * count, cudaMemcpyDeviceToHost));
 	CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(objectData.data(), obj_cuda, sizeof(Objects) * count, cudaMemcpyDeviceToHost));
 
-	// Optional: Print object data for debugging
-	// int object_index = 0;
-	// for (const auto& obj : objectData) {
-	// 	std::cout << "Object " << object_index++ << ": [ ";
-	// 	for (int i = 0; i < 16; ++i) {
-	// 		std::cout << obj.objects[i] << " ";
-	// 	}
-	// 	std::cout << "]" << std::endl;
-	// }
-
 	// Step 2: Perform inference
-	std::vector<std::vector<float>> logits;
+	Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> logits;
 	classifier->processGaussians(objectData, logits);
+
+	std::cout << "First row: " << logits.col(0) << std::endl;
+
+	int selected_obj_ids = 2;
+	float removal_thresh = 0.5f;
+
+	Eigen::Matrix<bool, 1, Eigen::Dynamic, Eigen::RowMajor> mask;
+	mask = (logits.row(selected_obj_ids).array() > removal_thresh);
+
+	std::cout << "Number of gaussians meeting threshold: " << mask.count() << std::endl;
 
 	SIBR_LOG << "Gaussians have been segmented " << (count * 2) << " to " << count << std::endl;
 }

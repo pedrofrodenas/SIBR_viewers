@@ -1,9 +1,10 @@
 #pragma once
 
 #include <onnxruntime_cxx_api.h>
-#include <unsupported/Eigen/CXX11/Tensor>
+#include <Eigen/Dense>
 #include <memory>
 #include <vector>
+#include <thread>
 
 #include <projects/gaussianviewer/renderer/GaussianStructures.hpp>
 
@@ -14,7 +15,7 @@ public:
     GaussianClassifier(const std::string& onnx_path);
 
     // Process a single STFT frame
-    void processGaussians(std::vector<Objects> &objectData, std::vector<std::vector<float>>& logits);
+    void processGaussians(std::vector<Objects> &objectData, Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>& logits);
 
 private:
     // ONNX Runtime objects

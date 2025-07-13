@@ -835,7 +835,15 @@ void sibr::GaussianView::SegmentGaussians()
 	Eigen::Matrix<bool, 1, Eigen::Dynamic, Eigen::RowMajor> mask;
 	mask = (logits.row(selected_obj_ids).array() > removal_thresh);
 
+	Eigen::Matrix<float, 1, Eigen::Dynamic, Eigen::RowMajor> float_mask = mask.cast<float>();
+
 	std::cout << "Number of gaussians meeting threshold: " << mask.count() << std::endl;
+	std::cout << "Number of rows: " << mask.rows() << std::endl;
+	std::cout << "Number of columns: " << mask.cols() << std::endl;
+
+	PointsInsideConvexHull(pos, float_mask);
+
+
 
 	SIBR_LOG << "Gaussians have been segmented " << (count * 2) << " to " << count << std::endl;
 }

@@ -28,6 +28,9 @@
 #include "GaussianClassifier.hpp"
 
 #include <projects/gaussianviewer/renderer/GaussianStructures.hpp>
+#include <projects/gaussianviewer/renderer/GaussianHull.hpp>
+
+
 
 
 namespace CudaRasterizer

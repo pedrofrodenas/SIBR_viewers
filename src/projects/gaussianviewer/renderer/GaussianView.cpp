@@ -808,7 +808,7 @@ void sibr::GaussianView::removeHalfGaussians()
     SIBR_LOG << "Reduced Gaussians from " << (count * 2) << " to " << count << std::endl;
 }
 
-void sibr::GaussianView::SegmentGaussians()
+void sibr::GaussianView::SegmentGaussians(int selectedObjId, float removalThreshold)
 {
 	if (objData == false)
 	{
@@ -835,11 +835,8 @@ void sibr::GaussianView::SegmentGaussians()
 	Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> logits;
 	classifier->processGaussians(objectData, logits);
 
-	int selected_obj_ids = 2;
-	float removal_thresh = 0.5f;
-
 	Eigen::Matrix<bool, 1, Eigen::Dynamic, Eigen::RowMajor> mask;
-	mask = (logits.row(selected_obj_ids).array() > removal_thresh);
+	mask = (logits.row(selectedObjId).array() > removalThreshold);
 
 	Eigen::Matrix<float, 1, Eigen::Dynamic, Eigen::RowMajor> float_mask = mask.cast<float>();
 
@@ -1029,9 +1026,15 @@ void sibr::GaussianView::onGUI()
 		{
 			restoreOriginalData(); // Call your function here
 		}
-		if (ImGui::Button("Segment Gaussians"))
+		ImGui::Checkbox("Show Segmentation Options", &showSegmentationOptions);
+		if (showSegmentationOptions)
 		{
-			SegmentGaussians(); // Call your function here
+			ImGui::InputInt("ID Object to Segment", &objSegmentID);
+			ImGui::SliderFloat("Segmentation Threshold", &segmentationThreshold, 0.0f, 1.0f);
+			if (ImGui::Button("Segment Gaussians"))
+			{
+				SegmentGaussians(objSegmentID, segmentationThreshold); // Call your function here
+			}
 		}
 		ImGui::End();
 	}

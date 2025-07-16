@@ -16,6 +16,7 @@
 #include <rasterizer.h>
 #include <imgui_internal.h>
 
+
 // Define the types and sizes that make up the contents of each Gaussian 
 // in the trained model.
 
@@ -808,6 +809,34 @@ void sibr::GaussianView::removeHalfGaussians()
     SIBR_LOG << "Reduced Gaussians from " << (count * 2) << " to " << count << std::endl;
 }
 
+void sibr::GaussianView::SelectGaussians(int selectedObjId, float selectionThreshold, bool filterbyConvexHull, std::vector<Objects> &objectData, std::vector<Pos>& pos, Eigen::Array<bool, Eigen::Dynamic, 1>& mask3d)
+{
+	if (objData == false)
+	{
+		SIBR_WRG << "The dataset format doesn't support gaussians segmentation!. Please train splats using Gaussian Grouping Repository" << std::endl;
+		return;
+	}
+	// Step 2: Perform inference
+	Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> logits;
+	classifier->processGaussians(objectData, logits);
+
+
+	Eigen::Matrix<bool, 1, Eigen::Dynamic, Eigen::RowMajor> mask;
+	mask = (logits.row(selectedObjId).array() > selectionThreshold);
+
+	if (filterbyConvexHull)
+	{
+		Eigen::Matrix<float, 1, Eigen::Dynamic, Eigen::RowMajor> float_mask = mask.cast<float>();
+		Eigen::Array<bool, Eigen::Dynamic, 1> mask3dConvex = PointsInsideConvexHull(pos, float_mask);
+		Eigen::Array<bool, Eigen::Dynamic, 1> mask_transposed = mask.transpose();
+		mask3d = mask_transposed || mask3dConvex;
+	}
+	else
+	{
+		mask3d = mask.transpose();
+	}
+}
+
 void sibr::GaussianView::SegmentGaussians(int selectedObjId, float removalThreshold, bool filterbyConvexHull)
 {
 	if (objData == false)
@@ -831,27 +860,29 @@ void sibr::GaussianView::SegmentGaussians(int selectedObjId, float removalThresh
 	CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(shs.data(), shs_cuda, sizeof(SHs<3>) * count, cudaMemcpyDeviceToHost));
 	CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(objectData.data(), obj_cuda, sizeof(Objects) * count, cudaMemcpyDeviceToHost));
 
-	// Step 2: Perform inference
-	Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> logits;
-	classifier->processGaussians(objectData, logits);
+	Eigen::Array<bool, Eigen::Dynamic, 1> output3dMask;
+	this->SelectGaussians(selectedObjId, removalThreshold, filterbyConvexHull, objectData, pos, output3dMask);
 
-
-	Eigen::Matrix<bool, 1, Eigen::Dynamic, Eigen::RowMajor> mask;
-	mask = (logits.row(selectedObjId).array() > removalThreshold);
-
-	Eigen::Array<bool, Eigen::Dynamic, 1> mask3d;
-	if (filterbyConvexHull)
-	{
-		Eigen::Matrix<float, 1, Eigen::Dynamic, Eigen::RowMajor> float_mask = mask.cast<float>();
-		Eigen::Array<bool, Eigen::Dynamic, 1> mask3dConvex = PointsInsideConvexHull(pos, float_mask);
-		Eigen::Array<bool, Eigen::Dynamic, 1> mask_transposed = mask.transpose();
-		mask3d = mask_transposed || mask3dConvex;
-	}
-	else
-	{
-		mask3d = mask.transpose();
-	}
-
+	// // Step 2: Perform inference
+	// Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> logits;
+	// classifier->processGaussians(objectData, logits);
+	//
+	//
+	// Eigen::Matrix<bool, 1, Eigen::Dynamic, Eigen::RowMajor> mask;
+	// mask = (logits.row(selectedObjId).array() > removalThreshold);
+	//
+	// Eigen::Array<bool, Eigen::Dynamic, 1> mask3d;
+	// if (filterbyConvexHull)
+	// {
+	// 	Eigen::Matrix<float, 1, Eigen::Dynamic, Eigen::RowMajor> float_mask = mask.cast<float>();
+	// 	Eigen::Array<bool, Eigen::Dynamic, 1> mask3dConvex = PointsInsideConvexHull(pos, float_mask);
+	// 	Eigen::Array<bool, Eigen::Dynamic, 1> mask_transposed = mask.transpose();
+	// 	mask3d = mask_transposed || mask3dConvex;
+	// }
+	// else
+	// {
+	// 	mask3d = mask.transpose();
+	// }
 
 	// Step 3: Filter out gaussians where mask3d is True
 	std::vector<Pos> filtered_pos;
@@ -869,7 +900,7 @@ void sibr::GaussianView::SegmentGaussians(int selectedObjId, float removalThresh
 	filtered_objectData.reserve(count);
 
 	for (int i = 0; i < count; ++i) {
-		if (!mask3d[i]) { // Keep gaussians where mask3d is False
+		if (!output3dMask[i]) { // Keep gaussians where mask3d is False
 			filtered_pos.push_back(pos[i]);
 			filtered_rot.push_back(rot[i]);
 			filtered_scale.push_back(scale[i]);
@@ -1039,9 +1070,13 @@ void sibr::GaussianView::onGUI()
 			ImGui::InputInt("ID Object to Segment", &objSegmentID);
 			ImGui::SliderFloat("Segmentation Threshold", &segmentationThreshold, 0.0f, 1.0f);
 			ImGui::Checkbox("Filter by 3D ConvexHull", &filterbyConvexHull);
-			if (ImGui::Button("Segment Gaussians"))
+			if (ImGui::Button("Remove Gaussians"))
 			{
-				SegmentGaussians(objSegmentID, segmentationThreshold, filterbyConvexHull); // Call your function here
+				SegmentGaussians(objSegmentID, segmentationThreshold, filterbyConvexHull);
+			}
+			if (ImGui::Button("Select Gaussians"))
+			{
+				std::cout << "Need to define logic to select gaussians" << std::endl;
 			}
 		}
 		ImGui::End();

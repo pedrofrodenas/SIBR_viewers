@@ -99,6 +99,7 @@ namespace sibr {
 
 		void SegmentGaussians(int selectedObjId, float removalThreshold, bool filterbyConvexHull);
 		void SelectGaussians(int selectedObjId, float selectionThreshold, bool filterbyConvexHull, std::vector<Objects> &objectData, std::vector<Pos>& pos, Eigen::Array<bool, Eigen::Dynamic, 1>& mask3d);
+		void ChangeColor(int selectedObjId, float removalThreshold, bool filterbyConvexHull);
 
 		/** \return a reference to the scene */
 		const std::shared_ptr<sibr::BasicIBRScene> & getScene() const { return _scene; }

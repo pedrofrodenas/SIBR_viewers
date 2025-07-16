@@ -863,27 +863,6 @@ void sibr::GaussianView::SegmentGaussians(int selectedObjId, float removalThresh
 	Eigen::Array<bool, Eigen::Dynamic, 1> output3dMask;
 	this->SelectGaussians(selectedObjId, removalThreshold, filterbyConvexHull, objectData, pos, output3dMask);
 
-	// // Step 2: Perform inference
-	// Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> logits;
-	// classifier->processGaussians(objectData, logits);
-	//
-	//
-	// Eigen::Matrix<bool, 1, Eigen::Dynamic, Eigen::RowMajor> mask;
-	// mask = (logits.row(selectedObjId).array() > removalThreshold);
-	//
-	// Eigen::Array<bool, Eigen::Dynamic, 1> mask3d;
-	// if (filterbyConvexHull)
-	// {
-	// 	Eigen::Matrix<float, 1, Eigen::Dynamic, Eigen::RowMajor> float_mask = mask.cast<float>();
-	// 	Eigen::Array<bool, Eigen::Dynamic, 1> mask3dConvex = PointsInsideConvexHull(pos, float_mask);
-	// 	Eigen::Array<bool, Eigen::Dynamic, 1> mask_transposed = mask.transpose();
-	// 	mask3d = mask_transposed || mask3dConvex;
-	// }
-	// else
-	// {
-	// 	mask3d = mask.transpose();
-	// }
-
 	// Step 3: Filter out gaussians where mask3d is True
 	std::vector<Pos> filtered_pos;
 	std::vector<Rot> filtered_rot;
@@ -946,6 +925,60 @@ void sibr::GaussianView::SegmentGaussians(int selectedObjId, float removalThresh
 		SIBR_WRG << "Warning: All gaussians were removed!" << std::endl;
 		count = 0;
 	}
+}
+
+void sibr::GaussianView::ChangeColor(int selectedObjId, float removalThreshold, bool filterbyConvexHull)
+{
+	if (!objData) // Simplified check
+	{
+		SIBR_WRG << "The dataset format doesn't support object selection/modification!" << std::endl;
+		return;
+	}
+
+	// Step 1: Copy data from GPU to CPU (same as before).
+	std::vector<Pos> pos(count);
+	std::vector<SHs<3>> shs(count);
+	std::vector<Objects> objectData(count);
+	// Note: You only need to copy data required for selection and the data you want to modify.
+	// pos and objectData are needed for SelectGaussians. shs is needed for modification.
+	CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(pos.data(), pos_cuda, sizeof(Pos) * count, cudaMemcpyDeviceToHost));
+	CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(shs.data(), shs_cuda, sizeof(SHs<3>) * count, cudaMemcpyDeviceToHost));
+	CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(objectData.data(), obj_cuda, sizeof(Objects) * count, cudaMemcpyDeviceToHost));
+
+	// Step 2: Get the selection mask (same as before).
+	Eigen::Array<bool, Eigen::Dynamic, 1> output3dMask;
+	this->SelectGaussians(selectedObjId, removalThreshold, filterbyConvexHull, objectData, pos, output3dMask);
+
+	// -- MODIFIED LOGIC STARTS HERE --
+
+	// Step 3: Iterate over all gaussians and modify the color of selected ones.
+	for (int i = 0; i < count; ++i) {
+		// If the gaussian at index 'i' is selected by the mask...
+		if (output3dMask[i]) {
+			// ...change its color to solid green.
+
+			// The first three SH coefficients determine the base color (R, G, B).
+			// These values correspond to an RGB of (0, 1, 0).
+			shs[i].shs[0] = -1.772f; // Red channel DC
+			shs[i].shs[1] =  1.772f; // Green channel DC
+			shs[i].shs[2] = -1.772f; // Blue channel DC
+
+			// For a solid, non-view-dependent color, zero out all higher-order coefficients.
+			// The total number of floats in the shs array is (3+1)*(3+1)*3 = 48.
+			// We start from the 4th float (index 3).
+			constexpr int num_coeffs_total = (3 + 1) * (3 + 1) * 3;
+			for (int j = 3; j < num_coeffs_total; ++j) {
+				shs[i].shs[j] = 0.0f;
+			}
+		}
+		// If output3dMask[i] is false, we do nothing, leaving the gaussian unaltered.
+	}
+
+	// Step 4: Copy the modified SH data back to the GPU.
+	// No need to reallocate memory as the number of gaussians has not changed.
+	CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(shs_cuda, shs.data(), sizeof(SHs<3>) * count, cudaMemcpyHostToDevice));
+
+	SIBR_LOG << "Updated colors for " << output3dMask.count() << " gaussians." << std::endl;
 }
 
 void sibr::GaussianView::onRenderIBR(sibr::IRenderTarget & dst, const sibr::Camera & eye)
@@ -1074,9 +1107,9 @@ void sibr::GaussianView::onGUI()
 			{
 				SegmentGaussians(objSegmentID, segmentationThreshold, filterbyConvexHull);
 			}
-			if (ImGui::Button("Select Gaussians"))
+			if (ImGui::Button("Change Color"))
 			{
-				std::cout << "Need to define logic to select gaussians" << std::endl;
+				ChangeColor(objSegmentID, segmentationThreshold, filterbyConvexHull);
 			}
 		}
 		ImGui::End();

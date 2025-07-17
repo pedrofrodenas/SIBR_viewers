@@ -830,14 +830,14 @@ void sibr::GaussianView::SelectGaussians(int selectedObjId, float selectionThres
 		Eigen::Array<bool, Eigen::Dynamic, 1> mask3dConvex = PointsInsideConvexHull(pos, float_mask);
 		Eigen::Array<bool, Eigen::Dynamic, 1> mask_transposed = mask.transpose();
 		mask3d = mask_transposed || mask3dConvex;
+		if (spatialPrunning)
+		{
+			SpatialAwarePrunning(pos, mask3d);
+		}
 	}
 	else
 	{
 		mask3d = mask.transpose();
-	}
-	if (spatialPrunning)
-	{
-		SpatialAwarePrunning(pos, mask3d);
 	}
 }
 
@@ -1107,7 +1107,10 @@ void sibr::GaussianView::onGUI()
 			ImGui::InputInt("ID Object to Segment", &objSegmentID);
 			ImGui::SliderFloat("Segmentation Threshold", &segmentationThreshold, 0.0f, 1.0f);
 			ImGui::Checkbox("Filter by 3D ConvexHull", &filterbyConvexHull);
-			ImGui::Checkbox("Spatial-Aware Statistical Prunning", &SpatialPruning);
+			if (filterbyConvexHull)
+			{
+				ImGui::Checkbox("Spatial-Aware Statistical Prunning", &SpatialPruning);
+			}
 			if (ImGui::Button("Remove Gaussians"))
 			{
 				SegmentGaussians(objSegmentID, segmentationThreshold, filterbyConvexHull, SpatialPruning);

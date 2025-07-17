@@ -809,7 +809,7 @@ void sibr::GaussianView::removeHalfGaussians()
     SIBR_LOG << "Reduced Gaussians from " << (count * 2) << " to " << count << std::endl;
 }
 
-void sibr::GaussianView::SelectGaussians(int selectedObjId, float selectionThreshold, bool filterbyConvexHull, std::vector<Objects> &objectData, std::vector<Pos>& pos, Eigen::Array<bool, Eigen::Dynamic, 1>& mask3d)
+void sibr::GaussianView::SelectGaussians(int selectedObjId, float selectionThreshold, bool filterbyConvexHull, bool spatialPrunning, std::vector<Objects> &objectData, std::vector<Pos>& pos, Eigen::Array<bool, Eigen::Dynamic, 1>& mask3d)
 {
 	if (objData == false)
 	{
@@ -835,9 +835,13 @@ void sibr::GaussianView::SelectGaussians(int selectedObjId, float selectionThres
 	{
 		mask3d = mask.transpose();
 	}
+	if (spatialPrunning)
+	{
+		SpatialAwarePrunning(pos, mask3d);
+	}
 }
 
-void sibr::GaussianView::SegmentGaussians(int selectedObjId, float removalThreshold, bool filterbyConvexHull)
+void sibr::GaussianView::SegmentGaussians(int selectedObjId, float removalThreshold, bool filterbyConvexHull, bool spatialPrunning)
 {
 	if (objData == false)
 	{
@@ -861,7 +865,7 @@ void sibr::GaussianView::SegmentGaussians(int selectedObjId, float removalThresh
 	CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(objectData.data(), obj_cuda, sizeof(Objects) * count, cudaMemcpyDeviceToHost));
 
 	Eigen::Array<bool, Eigen::Dynamic, 1> output3dMask;
-	this->SelectGaussians(selectedObjId, removalThreshold, filterbyConvexHull, objectData, pos, output3dMask);
+	this->SelectGaussians(selectedObjId, removalThreshold, filterbyConvexHull, spatialPrunning, objectData, pos, output3dMask);
 
 	// Step 3: Filter out gaussians where mask3d is True
 	std::vector<Pos> filtered_pos;
@@ -927,7 +931,7 @@ void sibr::GaussianView::SegmentGaussians(int selectedObjId, float removalThresh
 	}
 }
 
-void sibr::GaussianView::ChangeColor(int selectedObjId, float removalThreshold, bool filterbyConvexHull)
+void sibr::GaussianView::ChangeColor(int selectedObjId, float removalThreshold, bool filterbyConvexHull, bool spatialPrunning)
 {
 	if (!objData) // Simplified check
 	{
@@ -947,7 +951,7 @@ void sibr::GaussianView::ChangeColor(int selectedObjId, float removalThreshold, 
 
 	// Step 2: Get the selection mask (same as before).
 	Eigen::Array<bool, Eigen::Dynamic, 1> output3dMask;
-	this->SelectGaussians(selectedObjId, removalThreshold, filterbyConvexHull, objectData, pos, output3dMask);
+	this->SelectGaussians(selectedObjId, removalThreshold, filterbyConvexHull, spatialPrunning, objectData, pos, output3dMask);
 
 	// -- MODIFIED LOGIC STARTS HERE --
 
@@ -1103,13 +1107,14 @@ void sibr::GaussianView::onGUI()
 			ImGui::InputInt("ID Object to Segment", &objSegmentID);
 			ImGui::SliderFloat("Segmentation Threshold", &segmentationThreshold, 0.0f, 1.0f);
 			ImGui::Checkbox("Filter by 3D ConvexHull", &filterbyConvexHull);
+			ImGui::Checkbox("Spatial-Aware Statistical Prunning", &SpatialPruning);
 			if (ImGui::Button("Remove Gaussians"))
 			{
-				SegmentGaussians(objSegmentID, segmentationThreshold, filterbyConvexHull);
+				SegmentGaussians(objSegmentID, segmentationThreshold, filterbyConvexHull, SpatialPruning);
 			}
 			if (ImGui::Button("Change Color"))
 			{
-				ChangeColor(objSegmentID, segmentationThreshold, filterbyConvexHull);
+				ChangeColor(objSegmentID, segmentationThreshold, filterbyConvexHull, SpatialPruning);
 			}
 		}
 		ImGui::End();

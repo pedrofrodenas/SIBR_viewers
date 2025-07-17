@@ -137,3 +137,51 @@ Eigen::Array<bool, Eigen::Dynamic, 1> PointsInsideConvexHull(std::vector<Pos>& p
 
     return inside_mask;
 }
+
+void SpatialAwarePrunning(std::vector<Pos>& pos, Eigen::Array<bool, Eigen::Dynamic, 1>& mask3d)
+{
+    // Map the position data to a matrix
+    Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> xyzCoords(
+        reinterpret_cast<float*>(pos.data()), pos.size(), 3);
+
+    // Count selected points
+    int num_selected = mask3d.count();
+
+    std::cout << "Number of gaussians before spatial-aware statistical pruning: " << num_selected << std::endl;
+
+    Eigen::MatrixXf maskedPoints(num_selected, xyzCoords.cols());
+
+    // Fill maskedPoints with selected points and track their original indices
+    std::vector<int> selected_indices;
+    int current_row = 0;
+    for (int i = 0; i < xyzCoords.rows(); ++i) {
+        if (mask3d(i)) {
+            maskedPoints.row(current_row++) = xyzCoords.row(i);
+            selected_indices.push_back(i);
+        }
+    }
+
+    // Calculate the centroid
+    Eigen::Vector3f centroid = maskedPoints.colwise().mean();
+    std::cout << "Centroid:\n" << centroid << std::endl;
+
+    // Compute Euclidean distances to the centroid for selected points
+    Eigen::VectorXf distances(num_selected);
+    for (int i = 0; i < num_selected; ++i) {
+        distances(i) = (maskedPoints.row(i) - centroid.transpose()).norm();
+    }
+
+    // Calculate mean and standard deviation of distances
+    float mean_distance = distances.mean();
+    float var_distance = ((distances.array() - mean_distance).square().sum()) / (distances.size() - 1);
+    float std_distance = sqrt(var_distance);
+
+    // Filter out points beyond 2 standard deviations
+    for (int i = 0; i < num_selected; ++i) {
+        if (distances(i) > mean_distance + 2 * std_distance) {
+            mask3d(selected_indices[i]) = false;
+        }
+    }
+
+    std::cout << "Number of gaussians after spatial-aware statistical pruning: " << mask3d.count() << std::endl;
+}

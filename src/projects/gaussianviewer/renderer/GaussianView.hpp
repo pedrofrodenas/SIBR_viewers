@@ -97,9 +97,9 @@ namespace sibr {
 		template<int D>
 		void restoreOriginalData();
 
-		void SegmentGaussians(int selectedObjId, float removalThreshold, bool filterbyConvexHull, bool spatialPrunning);
-		void SelectGaussians(int selectedObjId, float selectionThreshold, bool filterbyConvexHull, bool spatialPrunning, std::vector<Objects> &objectData, std::vector<Pos>& pos, Eigen::Array<bool, Eigen::Dynamic, 1>& mask3d);
-		void ChangeColor(int selectedObjId, float removalThreshold, bool filterbyConvexHull, bool spatialPrunning);
+		void SegmentGaussians(int selectedObjId, float removalThreshold, float zscoreThreshold ,bool filterbyConvexHull, bool spatialPrunning);
+		void SelectGaussians(int selectedObjId, float selectionThreshold, float zscoreThreshold, bool filterbyConvexHull, bool spatialPrunning, std::vector<Objects> &objectData, std::vector<Pos>& pos, Eigen::Array<bool, Eigen::Dynamic, 1>& mask3d);
+		void ChangeColor(int selectedObjId, float removalThreshold, float zscoreThreshold, bool filterbyConvexHull, bool spatialPrunning);
 
 		/** \return a reference to the scene */
 		const std::shared_ptr<sibr::BasicIBRScene> & getScene() const { return _scene; }
@@ -152,6 +152,7 @@ namespace sibr {
 		std::unique_ptr<GaussianClassifier> classifier;
 		bool showSegmentationOptions=false;
 		float segmentationThreshold = 0.5f;
+		float zscoreThreshold = 0.5f;
 		int objSegmentID = 1;
 		bool filterbyConvexHull = true;
 		bool SpatialPruning = false;

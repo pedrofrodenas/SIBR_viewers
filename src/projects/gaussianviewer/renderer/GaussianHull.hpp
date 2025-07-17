@@ -27,4 +27,4 @@ Eigen::Array<bool, Eigen::Dynamic, 1> points_inside_convex_hull(
 
 Eigen::Array<bool, Eigen::Dynamic, 1> PointsInsideConvexHull(std::vector<Pos>& pos, Eigen::Matrix<float, 1, Eigen::Dynamic, Eigen::RowMajor>& mask3d);
 
-void SpatialAwarePrunning(std::vector<Pos>& pos, Eigen::Array<bool, Eigen::Dynamic, 1>& mask3d);
+void SpatialAwarePrunning(std::vector<Pos>& pos, Eigen::Array<bool, Eigen::Dynamic, 1>& convexHullMask, float zscoreThreshold, Eigen::Array<bool, Eigen::Dynamic, 1>& mask3d);

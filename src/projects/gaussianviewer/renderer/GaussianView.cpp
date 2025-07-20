@@ -932,7 +932,7 @@ void sibr::GaussianView::SegmentGaussians(int selectedObjId, float removalThresh
 }
 
 
-void sibr::GaussianView::ChangeColor(int selectedObjId, float removalThreshold, float zscoreThreshold, bool filterbyConvexHull, bool spatialPrunning)
+void sibr::GaussianView::SelectGaussiansByID(int selectedObjId, float removalThreshold, float zscoreThreshold, bool filterbyConvexHull, bool spatialPrunning)
 {
     if (!objData)
     {
@@ -1269,9 +1269,9 @@ void sibr::GaussianView::onGUI()
 			{
 				SegmentGaussians(objSegmentID, segmentationThreshold, zscoreThreshold, filterbyConvexHull, SpatialPruning);
 			}
-			if (ImGui::Button("Change Color"))
+			if (ImGui::Button("Select Gaussians"))
 			{
-				ChangeColor(objSegmentID, segmentationThreshold, zscoreThreshold, filterbyConvexHull, SpatialPruning);
+				SelectGaussiansByID(objSegmentID, segmentationThreshold, zscoreThreshold, filterbyConvexHull, SpatialPruning);
 			}
 			ImGui::Separator();
 

@@ -100,7 +100,7 @@ namespace sibr {
 
 		void SegmentGaussians(int selectedObjId, float removalThreshold, float zscoreThreshold ,bool filterbyConvexHull, bool spatialPrunning);
 		void SelectGaussians(int selectedObjId, float selectionThreshold, float zscoreThreshold, bool filterbyConvexHull, bool spatialPrunning, std::vector<Objects> &objectData, std::vector<Pos>& pos, Eigen::Array<bool, Eigen::Dynamic, 1>& mask3d);
-		void ChangeColor(int selectedObjId, float removalThreshold, float zscoreThreshold, bool filterbyConvexHull, bool spatialPrunning);
+		void SelectGaussiansByID(int selectedObjId, float removalThreshold, float zscoreThreshold, bool filterbyConvexHull, bool spatialPrunning);
 		void RestoreColor(int selectedObjId);
 		void TransformGaussians(float uniformScale, const sibr::Vector3f& translation, const sibr::Vector3f& rotation_xyz_degrees);
 

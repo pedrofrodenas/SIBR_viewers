@@ -35,30 +35,46 @@ Rot quaternion_from_rotation_matrix(const Eigen::Matrix3f& R) {
 
     if (trace > 0) {
         float s = 0.5f / sqrtf(trace + 1.0f);
-        quat.rot[3] = 0.25f / s;  // w
-        quat.rot[0] = (R(2,1) - R(1,2)) * s;  // x
-        quat.rot[1] = (R(0,2) - R(2,0)) * s;  // y
-        quat.rot[2] = (R(1,0) - R(0,1)) * s;  // z
+        quat.rot[0] = 0.25f / s;  // w (real part) - assuming rot[0] is w
+        quat.rot[1] = (R(2,1) - R(1,2)) * s;  // x
+        quat.rot[2] = (R(0,2) - R(2,0)) * s;  // y
+        quat.rot[3] = (R(1,0) - R(0,1)) * s;  // z
     } else {
         if (R(0,0) > R(1,1) && R(0,0) > R(2,2)) {
             float s = 2.0f * sqrtf(1.0f + R(0,0) - R(1,1) - R(2,2));
-            quat.rot[3] = (R(2,1) - R(1,2)) / s;  // w
-            quat.rot[0] = 0.25f * s;              // x
-            quat.rot[1] = (R(0,1) + R(1,0)) / s;  // y
-            quat.rot[2] = (R(0,2) + R(2,0)) / s;  // z
+            quat.rot[0] = (R(2,1) - R(1,2)) / s;  // w
+            quat.rot[1] = 0.25f * s;              // x
+            quat.rot[2] = (R(0,1) + R(1,0)) / s;  // y
+            quat.rot[3] = (R(0,2) + R(2,0)) / s;  // z
         } else if (R(1,1) > R(2,2)) {
             float s = 2.0f * sqrtf(1.0f + R(1,1) - R(0,0) - R(2,2));
-            quat.rot[3] = (R(0,2) - R(2,0)) / s;  // w
-            quat.rot[0] = (R(0,1) + R(1,0)) / s;  // x
-            quat.rot[1] = 0.25f * s;              // y
-            quat.rot[2] = (R(1,2) + R(2,1)) / s;  // z
+            quat.rot[0] = (R(0,2) - R(2,0)) / s;  // w
+            quat.rot[1] = (R(0,1) + R(1,0)) / s;  // x
+            quat.rot[2] = 0.25f * s;              // y
+            quat.rot[3] = (R(1,2) + R(2,1)) / s;  // z
         } else {
             float s = 2.0f * sqrtf(1.0f + R(2,2) - R(0,0) - R(1,1));
-            quat.rot[3] = (R(1,0) - R(0,1)) / s;  // w
-            quat.rot[0] = (R(0,2) + R(2,0)) / s;  // x
-            quat.rot[1] = (R(1,2) + R(2,1)) / s;  // y
-            quat.rot[2] = 0.25f * s;              // z
+            quat.rot[0] = (R(1,0) - R(0,1)) / s;  // w
+            quat.rot[1] = (R(0,2) + R(2,0)) / s;  // x
+            quat.rot[2] = (R(1,2) + R(2,1)) / s;  // y
+            quat.rot[3] = 0.25f * s;              // z
         }
+    }
+
+    // FIX 5: Normalize the resulting quaternion
+    float norm = std::sqrt(quat.rot[0]*quat.rot[0] + quat.rot[1]*quat.rot[1] +
+                          quat.rot[2]*quat.rot[2] + quat.rot[3]*quat.rot[3]);
+    if (norm > 1e-8f) {  // Use small epsilon instead of 0
+        quat.rot[0] /= norm;
+        quat.rot[1] /= norm;
+        quat.rot[2] /= norm;
+        quat.rot[3] /= norm;
+    } else {
+        // Handle degenerate case - set to identity quaternion
+        quat.rot[0] = 1.0f;  // w
+        quat.rot[1] = 0.0f;  // x
+        quat.rot[2] = 0.0f;  // y
+        quat.rot[3] = 0.0f;  // z
     }
 
     return quat;

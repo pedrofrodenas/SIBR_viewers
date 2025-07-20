@@ -985,7 +985,7 @@ void sibr::GaussianView::ChangeColor(int selectedObjId, float removalThreshold, 
 	SIBR_LOG << "Updated colors for " << output3dMask.count() << " gaussians." << std::endl;
 }
 
-void sibr::GaussianView::TransformGaussians(int selectedObjId, float removalThreshold, float zscoreThreshold, bool filterbyConvexHull, bool spatialPrunning, float uniformScale, const Vector3f& translation)
+void sibr::GaussianView::TransformGaussians(int selectedObjId, float removalThreshold, float zscoreThreshold, bool filterbyConvexHull, bool spatialPrunning, float uniformScale, const Vector3f& translation, const sibr::Vector3f& rotation_xyz_degrees)
 {
     if (!objData)
     {
@@ -996,61 +996,87 @@ void sibr::GaussianView::TransformGaussians(int selectedObjId, float removalThre
     // Step 1: Copy necessary data from GPU to CPU
     std::vector<Pos> pos(count);
     std::vector<Rot> rot(count);
-    std::vector<Scale> scales(count);  // Add scales if you need to modify them
+    std::vector<Scale> scales(count);
     std::vector<Objects> objectData(count);
 
     CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(pos.data(), pos_cuda, sizeof(Pos) * count, cudaMemcpyDeviceToHost));
     CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(rot.data(), rot_cuda, sizeof(Rot) * count, cudaMemcpyDeviceToHost));
-    CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(scales.data(), scale_cuda, sizeof(Scale) * count, cudaMemcpyDeviceToHost));  // If available
+    CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(scales.data(), scale_cuda, sizeof(Scale) * count, cudaMemcpyDeviceToHost));
     CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(objectData.data(), obj_cuda, sizeof(Objects) * count, cudaMemcpyDeviceToHost));
 
     // Step 2: Get the selection mask
     Eigen::Array<bool, Eigen::Dynamic, 1> output3dMask;
     this->SelectGaussians(selectedObjId, removalThreshold, zscoreThreshold, filterbyConvexHull, spatialPrunning, objectData, pos, output3dMask);
 
-    Eigen::Matrix3f additionalRotation = Eigen::Matrix3f::Identity();  // Additional rotation (Identity = no rotation)
+	// Step 3: Define the transformation from the input parameters
+	float radX = rotation_xyz_degrees.x() * M_PI / 180.0f;
+	float radY = rotation_xyz_degrees.y() * M_PI / 180.0f;
+	float radZ = rotation_xyz_degrees.z() * M_PI / 180.0f;
 
-    // Step 4: Apply spatial transformation to selected Gaussians
+	Eigen::Matrix3f transformRotation = (
+		Eigen::AngleAxisf(radZ, Eigen::Vector3f::UnitZ()) *
+		Eigen::AngleAxisf(radY, Eigen::Vector3f::UnitY()) *
+		Eigen::AngleAxisf(radX, Eigen::Vector3f::UnitX())
+	).toRotationMatrix();
+
+    // Step 3: Calculate centroid of selected Gaussians
+    Eigen::Vector3f centroid = Eigen::Vector3f::Zero();
+    int selectedCount = 0;
     for (int i = 0; i < count; ++i) {
         if (output3dMask[i]) {
-            // OPTION 2: More complex transformation (if you need rotation/scaling of the entire group)
-            // Uncomment the following if you want to apply rotation/scaling to the gaussians themselves
+            centroid += pos[i];
+            selectedCount++;
+        }
+    }
+    if (selectedCount > 0) {
+        centroid /= selectedCount;
+    }
 
-            // Get current rotation matrix
+    // Step 5: Apply transformations to selected Gaussians
+    for (int i = 0; i < count; ++i) {
+        if (output3dMask[i]) {
+            // Transform position: translate to origin, rotate, scale, translate back, then apply final translation
+            Eigen::Vector3f relativePos = pos[i] - centroid;  // Move to centroid-centered coordinates
+            Eigen::Vector3f rotatedPos = transformRotation * relativePos;  // Rotate around centroid
+            Eigen::Vector3f scaledPos = rotatedPos * uniformScale;  // Apply uniform scaling
+            pos[i] = scaledPos + centroid + translation;  // Move back and apply final translation
+
+            // Transform the Gaussian's orientation
             Eigen::Matrix3f currentR = build_rotation(rot[i]);
+            Eigen::Matrix3f newR = transformRotation * currentR;
+            rot[i] = quaternion_from_rotation_matrix(newR);
 
-            // Apply additional rotation to the gaussian's orientation
-            Eigen::Matrix3f newR = additionalRotation * currentR;
-            rot[i] = quaternion_from_rotation_matrix(newR);  // You'll need this function
-
-            // Apply uniform scaling to the gaussian's scales
+            // Apply uniform scaling to the Gaussian's intrinsic scales
             if (uniformScale != 1.0f) {
                 scales[i].scale[0] *= uniformScale;
                 scales[i].scale[1] *= uniformScale;
                 scales[i].scale[2] *= uniformScale;
             }
-
-            // Transform position: first rotate, then scale, then translate
-            Eigen::Vector3f newPos = additionalRotation * (pos[i] * uniformScale) + translation;
-            pos[i] = newPos;
-
         }
     }
 
-    // Step 5: Copy modified data back to GPU
-    CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(pos_cuda, pos.data(), sizeof(Pos) * count, cudaMemcpyHostToDevice));
+	bool hasScaleChanged = (uniformScale != 1.0f);
+	bool hasRotationChanged = !transformRotation.isIdentity();
+	bool hasTranslationChanged = (translation != sibr::Vector3f(0.0f, 0.0f, 0.0f));
 
-	if (uniformScale != 1.0f) {
+
+	// Positions are affected by any of the three transformations.
+	if (hasScaleChanged || hasRotationChanged || hasTranslationChanged) {
+		CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(pos_cuda, pos.data(), sizeof(Pos) * count, cudaMemcpyHostToDevice));
+	}
+
+	// Scales are only affected by the uniformScale parameter.
+	if (hasScaleChanged) {
 		CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(scale_cuda, scales.data(), sizeof(Scale) * count, cudaMemcpyHostToDevice));
 	}
 
-	// Only copy rotations back if they were actually modified.
-	// Use Eigen's isIdentity() for a robust check.
-	if (!additionalRotation.isIdentity()) {
+	// Orientations are only affected by the rotation parameter.
+	if (hasRotationChanged) {
 		CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(rot_cuda, rot.data(), sizeof(Rot) * count, cudaMemcpyHostToDevice));
 	}
 
-    SIBR_LOG << "Updated positions for " << output3dMask.count() << " gaussians." << std::endl;
+    SIBR_LOG << "Updated positions for " << selectedCount << " gaussians around centroid "
+             << centroid.transpose() << std::endl;
 }
 
 void sibr::GaussianView::onRenderIBR(sibr::IRenderTarget & dst, const sibr::Camera & eye)
@@ -1198,7 +1224,7 @@ void sibr::GaussianView::onGUI()
 			ImGui::InputFloat3("Rotation (X,Y,Z deg)", transform_rotation.data());
 			if (ImGui::Button("Transform Gaussians"))
 			{
-				TransformGaussians(objSegmentID, segmentationThreshold, zscoreThreshold, filterbyConvexHull, SpatialPruning, transform_scale, transform_translation);
+				TransformGaussians(objSegmentID, segmentationThreshold, zscoreThreshold, filterbyConvexHull, SpatialPruning, transform_scale, transform_translation, transform_rotation);
 			}
 		}
 		ImGui::End();

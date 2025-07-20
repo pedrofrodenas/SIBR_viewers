@@ -985,7 +985,7 @@ void sibr::GaussianView::ChangeColor(int selectedObjId, float removalThreshold, 
 	SIBR_LOG << "Updated colors for " << output3dMask.count() << " gaussians." << std::endl;
 }
 
-void sibr::GaussianView::TransformGaussians(int selectedObjId, float removalThreshold, float zscoreThreshold, bool filterbyConvexHull, bool spatialPrunning)
+void sibr::GaussianView::TransformGaussians(int selectedObjId, float removalThreshold, float zscoreThreshold, bool filterbyConvexHull, bool spatialPrunning, float uniformScale, const Vector3f& translation)
 {
     if (!objData)
     {
@@ -1008,11 +1008,6 @@ void sibr::GaussianView::TransformGaussians(int selectedObjId, float removalThre
     Eigen::Array<bool, Eigen::Dynamic, 1> output3dMask;
     this->SelectGaussians(selectedObjId, removalThreshold, zscoreThreshold, filterbyConvexHull, spatialPrunning, objectData, pos, output3dMask);
 
-    // Step 3: Define the transformation
-    Eigen::Vector3f translation(1.0f, 0.5f, 0.0f); // Translation vector
-
-    // Optional: Define additional transformations
-    float uniformScale = 2.0f;  // Scale factor (1.0 = no scaling)
     Eigen::Matrix3f additionalRotation = Eigen::Matrix3f::Identity();  // Additional rotation (Identity = no rotation)
 
     // Step 4: Apply spatial transformation to selected Gaussians
@@ -1196,9 +1191,14 @@ void sibr::GaussianView::onGUI()
 			{
 				ChangeColor(objSegmentID, segmentationThreshold, zscoreThreshold, filterbyConvexHull, SpatialPruning);
 			}
+			ImGui::Separator();
+			ImGui::Text("Transformation Controls");
+			ImGui::InputFloat("Uniform Scale", &transform_scale, 0.05f);
+			ImGui::InputFloat3("Translation (X,Y,Z)", transform_translation.data());
+			ImGui::InputFloat3("Rotation (X,Y,Z deg)", transform_rotation.data());
 			if (ImGui::Button("Transform Gaussians"))
 			{
-				TransformGaussians(objSegmentID, segmentationThreshold, zscoreThreshold, filterbyConvexHull, SpatialPruning);
+				TransformGaussians(objSegmentID, segmentationThreshold, zscoreThreshold, filterbyConvexHull, SpatialPruning, transform_scale, transform_translation);
 			}
 		}
 		ImGui::End();

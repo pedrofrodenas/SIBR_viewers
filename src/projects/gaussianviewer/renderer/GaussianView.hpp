@@ -101,7 +101,8 @@ namespace sibr {
 		void SegmentGaussians(int selectedObjId, float removalThreshold, float zscoreThreshold ,bool filterbyConvexHull, bool spatialPrunning);
 		void SelectGaussians(int selectedObjId, float selectionThreshold, float zscoreThreshold, bool filterbyConvexHull, bool spatialPrunning, std::vector<Objects> &objectData, std::vector<Pos>& pos, Eigen::Array<bool, Eigen::Dynamic, 1>& mask3d);
 		void ChangeColor(int selectedObjId, float removalThreshold, float zscoreThreshold, bool filterbyConvexHull, bool spatialPrunning);
-		void TransformGaussians(int selectedObjId, float removalThreshold, float zscoreThreshold, bool filterbyConvexHull, bool spatialPrunning, float uniformScale, const Vector3f& translation, const sibr::Vector3f& rotation_xyz_degrees);
+		void RestoreColor(int selectedObjId);
+		void TransformGaussians(float uniformScale, const sibr::Vector3f& translation, const sibr::Vector3f& rotation_xyz_degrees);
 
 		/** \return a reference to the scene */
 		const std::shared_ptr<sibr::BasicIBRScene> & getScene() const { return _scene; }
@@ -164,6 +165,11 @@ namespace sibr {
 		float transform_scale = 1.0f;
 		Vector3f transform_translation = {0.0f, 0.0f, 0.0f};
 		Vector3f transform_rotation = {0.0f, 0.0f, 0.0f};
+
+		// Selected Group Array
+		using GaussianGroup = Eigen::Array<bool, Eigen::Dynamic, 1>;
+		using GroupId = int;
+		std::unordered_map<GroupId, GaussianGroup> selectedGroups;
 
 		// Original Data Backup
 		std::vector<Pos> _originalPos;

@@ -982,6 +982,7 @@ void sibr::GaussianView::ChangeColor(int selectedObjId, float removalThreshold, 
     }
 
     // -- MODIFIED LOGIC ENDS HERE --
+	selectedGroups[selectedObjId] = output3dMask;
 
     // Step 4: Copy the modified SH data back to the GPU.
     CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(shs_cuda, shs.data(), sizeof(SHs<3>) * count, cudaMemcpyHostToDevice));
@@ -989,7 +990,49 @@ void sibr::GaussianView::ChangeColor(int selectedObjId, float removalThreshold, 
     SIBR_LOG << "Updated colors for " << output3dMask.count() << " gaussians." << std::endl;
 }
 
-void sibr::GaussianView::TransformGaussians(int selectedObjId, float removalThreshold, float zscoreThreshold, bool filterbyConvexHull, bool spatialPrunning, float uniformScale, const Vector3f& translation, const sibr::Vector3f& rotation_xyz_degrees)
+void sibr::GaussianView::RestoreColor(int selectedObjId)
+{
+	// Check if the provided object ID corresponds to a currently selected group.
+	// If not, there's nothing to do.
+	if (selectedGroups.find(selectedObjId) == selectedGroups.end())
+	{
+		SIBR_WRG << "Group with ID " << selectedObjId << " is not currently selected. Cannot restore color." << std::endl;
+		return;
+	}
+
+	// Step 1: Retrieve the boolean mask for the selected group.
+	// This mask tells us exactly which Gaussians were tinted.
+	const auto& mask = selectedGroups.at(selectedObjId);
+
+	// Step 2: Copy the current SH data from the GPU to a CPU-side vector.
+	// We need to modify this data on the CPU before sending it back.
+	std::vector<SHs<3>> shs(count);
+	CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(shs.data(), shs_cuda, sizeof(SHs<3>) * count, cudaMemcpyDeviceToHost));
+
+	// Step 3: Iterate through all Gaussians and restore the color for the selected ones.
+	int restored_count = 0;
+	for (int i = 0; i < count; ++i)
+	{
+		// If the mask at index 'i' is true, it means this Gaussian's color was changed.
+		if (mask[i])
+		{
+			// Restore the original SH coefficients from the backup array.
+			shs[i] = _originalShs[i];
+			restored_count++;
+		}
+	}
+
+	// Step 4: Copy the modified SH data from the CPU back to the GPU.
+	// This makes the color change visible in the next render frame.
+	CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(shs_cuda, shs.data(), sizeof(SHs<3>) * count, cudaMemcpyHostToDevice));
+
+	// Step 5: Remove the group from the map of selected groups, as its color is now restored.
+	selectedGroups.erase(selectedObjId);
+
+	SIBR_LOG << "Restored original color for " << restored_count << " Gaussians in group " << selectedObjId << "." << std::endl;
+}
+
+void sibr::GaussianView::TransformGaussians(float uniformScale, const sibr::Vector3f& translation, const sibr::Vector3f& rotation_xyz_degrees)
 {
     if (!objData)
     {
@@ -997,37 +1040,46 @@ void sibr::GaussianView::TransformGaussians(int selectedObjId, float removalThre
         return;
     }
 
-    // Step 1: Copy necessary data from GPU to CPU
+    // If no groups are selected, there is nothing to transform.
+    if (selectedGroups.empty())
+    {
+        SIBR_LOG << "No groups selected for transformation." << std::endl;
+        return;
+    }
+
+    // Step 1: Create a combined mask from all selected groups.
+    // Initialize a mask of the correct size with all 'false'.
+    Eigen::Array<bool, Eigen::Dynamic, 1> combinedMask = Eigen::Array<bool, Eigen::Dynamic, 1>::Constant(count, false);
+    for (const auto& pair : selectedGroups) {
+        // Use logical OR to add the gaussians from the current group's mask.
+        combinedMask = combinedMask || pair.second;
+    }
+
+    // Step 2: Copy necessary data from GPU to CPU
     std::vector<Pos> pos(count);
     std::vector<Rot> rot(count);
     std::vector<Scale> scales(count);
-    std::vector<Objects> objectData(count);
 
     CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(pos.data(), pos_cuda, sizeof(Pos) * count, cudaMemcpyDeviceToHost));
     CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(rot.data(), rot_cuda, sizeof(Rot) * count, cudaMemcpyDeviceToHost));
     CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(scales.data(), scale_cuda, sizeof(Scale) * count, cudaMemcpyDeviceToHost));
-    CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(objectData.data(), obj_cuda, sizeof(Objects) * count, cudaMemcpyDeviceToHost));
 
-    // Step 2: Get the selection mask
-    Eigen::Array<bool, Eigen::Dynamic, 1> output3dMask;
-    this->SelectGaussians(selectedObjId, removalThreshold, zscoreThreshold, filterbyConvexHull, spatialPrunning, objectData, pos, output3dMask);
+    // Step 3: Define the transformation from the input parameters
+    float radX = rotation_xyz_degrees.x() * M_PI / 180.0f;
+    float radY = rotation_xyz_degrees.y() * M_PI / 180.0f;
+    float radZ = rotation_xyz_degrees.z() * M_PI / 180.0f;
 
-	// Step 3: Define the transformation from the input parameters
-	float radX = rotation_xyz_degrees.x() * M_PI / 180.0f;
-	float radY = rotation_xyz_degrees.y() * M_PI / 180.0f;
-	float radZ = rotation_xyz_degrees.z() * M_PI / 180.0f;
+    Eigen::Matrix3f transformRotation = (
+        Eigen::AngleAxisf(radZ, Eigen::Vector3f::UnitZ()) *
+        Eigen::AngleAxisf(radY, Eigen::Vector3f::UnitY()) *
+        Eigen::AngleAxisf(radX, Eigen::Vector3f::UnitX())
+    ).toRotationMatrix();
 
-	Eigen::Matrix3f transformRotation = (
-		Eigen::AngleAxisf(radZ, Eigen::Vector3f::UnitZ()) *
-		Eigen::AngleAxisf(radY, Eigen::Vector3f::UnitY()) *
-		Eigen::AngleAxisf(radX, Eigen::Vector3f::UnitX())
-	).toRotationMatrix();
-
-    // Step 3: Calculate centroid of selected Gaussians
+    // Step 4: Calculate the centroid of all selected Gaussians
     Eigen::Vector3f centroid = Eigen::Vector3f::Zero();
     int selectedCount = 0;
     for (int i = 0; i < count; ++i) {
-        if (output3dMask[i]) {
+        if (combinedMask[i]) {
             centroid += pos[i];
             selectedCount++;
         }
@@ -1036,9 +1088,9 @@ void sibr::GaussianView::TransformGaussians(int selectedObjId, float removalThre
         centroid /= selectedCount;
     }
 
-    // Step 5: Apply transformations to selected Gaussians
+    // Step 5: Apply transformations to selected Gaussians using the combined mask
     for (int i = 0; i < count; ++i) {
-        if (output3dMask[i]) {
+        if (combinedMask[i]) {
             // Transform position: translate to origin, rotate, scale, translate back, then apply final translation
             Eigen::Vector3f relativePos = pos[i] - centroid;  // Move to centroid-centered coordinates
             Eigen::Vector3f rotatedPos = transformRotation * relativePos;  // Rotate around centroid
@@ -1059,27 +1111,27 @@ void sibr::GaussianView::TransformGaussians(int selectedObjId, float removalThre
         }
     }
 
-	bool hasScaleChanged = (uniformScale != 1.0f);
-	bool hasRotationChanged = !transformRotation.isIdentity();
-	bool hasTranslationChanged = (translation != sibr::Vector3f(0.0f, 0.0f, 0.0f));
+    // Step 6: Copy modified data back to the GPU if changes were made
+    bool hasScaleChanged = (uniformScale != 1.0f);
+    bool hasRotationChanged = !transformRotation.isIdentity();
+    bool hasTranslationChanged = (translation != sibr::Vector3f(0.0f, 0.0f, 0.0f));
 
+    // Positions are affected by any of the three transformations.
+    if (hasScaleChanged || hasRotationChanged || hasTranslationChanged) {
+        CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(pos_cuda, pos.data(), sizeof(Pos) * count, cudaMemcpyHostToDevice));
+    }
 
-	// Positions are affected by any of the three transformations.
-	if (hasScaleChanged || hasRotationChanged || hasTranslationChanged) {
-		CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(pos_cuda, pos.data(), sizeof(Pos) * count, cudaMemcpyHostToDevice));
-	}
+    // Scales are only affected by the uniformScale parameter.
+    if (hasScaleChanged) {
+        CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(scale_cuda, scales.data(), sizeof(Scale) * count, cudaMemcpyHostToDevice));
+    }
 
-	// Scales are only affected by the uniformScale parameter.
-	if (hasScaleChanged) {
-		CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(scale_cuda, scales.data(), sizeof(Scale) * count, cudaMemcpyHostToDevice));
-	}
+    // Orientations are only affected by the rotation parameter.
+    if (hasRotationChanged) {
+        CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(rot_cuda, rot.data(), sizeof(Rot) * count, cudaMemcpyHostToDevice));
+    }
 
-	// Orientations are only affected by the rotation parameter.
-	if (hasRotationChanged) {
-		CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(rot_cuda, rot.data(), sizeof(Rot) * count, cudaMemcpyHostToDevice));
-	}
-
-    SIBR_LOG << "Updated positions for " << selectedCount << " gaussians around centroid "
+    SIBR_LOG << "Transformed " << selectedCount << " gaussians from active groups around centroid "
              << centroid.transpose() << std::endl;
 }
 
@@ -1222,13 +1274,50 @@ void sibr::GaussianView::onGUI()
 				ChangeColor(objSegmentID, segmentationThreshold, zscoreThreshold, filterbyConvexHull, SpatialPruning);
 			}
 			ImGui::Separator();
+
+			// --- NEW: Dynamic Group Selection and Deselection ---
+			ImGui::Text("Active Groups");
+
+			// Use a variable to hold the ID of the group to be removed. We perform removal after the loop.
+			GroupId group_to_remove = -1;
+
+			if (selectedGroups.empty())
+			{
+				ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "No groups selected.");
+			}
+			else
+			{
+				// Create a scrollable region in case of many selected groups.
+				ImGui::BeginChild("GroupList", ImVec2(0, 100), true);
+				for (const auto& pair : selectedGroups)
+				{
+					GroupId current_id = pair.first;
+					ImGui::Text("Group ID: %d", current_id);
+					ImGui::SameLine(ImGui::GetWindowWidth() - 80); // Align button to the right
+
+					// Create a unique label for the button using ## to hide the ID part from the visible label.
+					std::string button_label = "Deselect##" + std::to_string(current_id);
+					if (ImGui::Button(button_label.c_str()))
+					{
+						group_to_remove = current_id;
+					}
+				}
+				ImGui::EndChild();
+			}
+
+			// Safely remove the selected group outside of the iteration loop.
+			if (group_to_remove != -1)
+			{
+				RestoreColor(group_to_remove);
+			}
+
 			ImGui::Text("Transformation Controls");
 			ImGui::InputFloat("Uniform Scale", &transform_scale, 0.05f);
 			ImGui::InputFloat3("Translation (X,Y,Z)", transform_translation.data());
 			ImGui::InputFloat3("Rotation (X,Y,Z deg)", transform_rotation.data());
 			if (ImGui::Button("Transform Gaussians"))
 			{
-				TransformGaussians(objSegmentID, segmentationThreshold, zscoreThreshold, filterbyConvexHull, SpatialPruning, transform_scale, transform_translation, transform_rotation);
+				TransformGaussians(transform_scale, transform_translation, transform_rotation);
 			}
 		}
 		ImGui::End();

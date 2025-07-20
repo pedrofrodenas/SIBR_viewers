@@ -931,58 +931,62 @@ void sibr::GaussianView::SegmentGaussians(int selectedObjId, float removalThresh
 	}
 }
 
+
 void sibr::GaussianView::ChangeColor(int selectedObjId, float removalThreshold, float zscoreThreshold, bool filterbyConvexHull, bool spatialPrunning)
 {
-	if (!objData) // Simplified check
-	{
-		SIBR_WRG << "The dataset format doesn't support object selection/modification!" << std::endl;
-		return;
-	}
+    if (!objData)
+    {
+       SIBR_WRG << "The dataset format doesn't support object selection/modification!" << std::endl;
+       return;
+    }
 
-	// Step 1: Copy data from GPU to CPU (same as before).
-	std::vector<Pos> pos(count);
-	std::vector<SHs<3>> shs(count);
-	std::vector<Objects> objectData(count);
-	// Note: You only need to copy data required for selection and the data you want to modify.
-	// pos and objectData are needed for SelectGaussians. shs is needed for modification.
-	CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(pos.data(), pos_cuda, sizeof(Pos) * count, cudaMemcpyDeviceToHost));
-	CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(shs.data(), shs_cuda, sizeof(SHs<3>) * count, cudaMemcpyDeviceToHost));
-	CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(objectData.data(), obj_cuda, sizeof(Objects) * count, cudaMemcpyDeviceToHost));
+    // Step 1: Copy data from GPU to CPU.
+    std::vector<Pos> pos(count);
+    std::vector<SHs<3>> shs(count);
+    std::vector<Objects> objectData(count);
 
-	// Step 2: Get the selection mask (same as before).
-	Eigen::Array<bool, Eigen::Dynamic, 1> output3dMask;
-	this->SelectGaussians(selectedObjId, removalThreshold, zscoreThreshold, filterbyConvexHull, spatialPrunning, objectData, pos, output3dMask);
+    CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(pos.data(), pos_cuda, sizeof(Pos) * count, cudaMemcpyDeviceToHost));
+    CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(shs.data(), shs_cuda, sizeof(SHs<3>) * count, cudaMemcpyDeviceToHost));
+    CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(objectData.data(), obj_cuda, sizeof(Objects) * count, cudaMemcpyDeviceToHost));
 
-	// -- MODIFIED LOGIC STARTS HERE --
+    // Step 2: Get the selection mask.
+    Eigen::Array<bool, Eigen::Dynamic, 1> output3dMask;
+    this->SelectGaussians(selectedObjId, removalThreshold, zscoreThreshold, filterbyConvexHull, spatialPrunning, objectData, pos, output3dMask);
 
-	// Step 3: Iterate over all gaussians and modify the color of selected ones.
-	for (int i = 0; i < count; ++i) {
-		// If the gaussian at index 'i' is selected by the mask...
-		if (output3dMask[i]) {
-			// ...change its color to solid green.
+    // -- MODIFIED LOGIC STARTS HERE --
 
-			// The first three SH coefficients determine the base color (R, G, B).
-			// These values correspond to an RGB of (0, 1, 0).
-			shs[i].shs[0] = -1.772f; // Red channel DC
-			shs[i].shs[1] =  1.772f; // Green channel DC
-			shs[i].shs[2] = -1.772f; // Blue channel DC
+    // Step 3: Iterate over all Gaussians and apply a green tint to selected ones.
+    const float tintFactor = 0.3f; // Defines the strength of the green tint. 0.0 is no change, 1.0 is a strong tint.
 
-			// For a solid, non-view-dependent color, zero out all higher-order coefficients.
-			// The total number of floats in the shs array is (3+1)*(3+1)*3 = 48.
-			// We start from the 4th float (index 3).
-			constexpr int num_coeffs_total = (3 + 1) * (3 + 1) * 3;
-			for (int j = 3; j < num_coeffs_total; ++j) {
-				shs[i].shs[j] = 0.0f;
-			}
-		}
-		// If output3dMask[i] is false, we do nothing, leaving the gaussian unaltered.
-	}
+    // Pre-calculate the SH coefficients for the target green color.
+    // These values are derived from the SH basis function for DC components.
+    const float green_dc_r = -1.772f; // SH coefficient for red channel of green
+    const float green_dc_g = 1.772f;  // SH coefficient for green channel of green
+    const float green_dc_b = -1.772f; // SH coefficient for blue channel of green
 
-	// Step 4: Copy the modified SH data back to the GPU.
-	// No need to reallocate memory as the number of gaussians has not changed.
-	CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(shs_cuda, shs.data(), sizeof(SHs<3>) * count, cudaMemcpyHostToDevice));
+    for (int i = 0; i < count; ++i) {
+       // If the Gaussian at index 'i' is selected...
+       if (output3dMask[i]) {
+          // ...blend its current color with green.
 
-	SIBR_LOG << "Updated colors for " << output3dMask.count() << " gaussians." << std::endl;
+          // Read the original DC components (base color).
+          float original_dc_r = shs[i].shs[0];
+          float original_dc_g = shs[i].shs[1];
+          float original_dc_b = shs[i].shs[2];
+
+          // Linearly interpolate between the original color and the green color.
+          shs[i].shs[0] = original_dc_r * (1.0f - tintFactor) + green_dc_r * tintFactor;
+          shs[i].shs[1] = original_dc_g * (1.0f - tintFactor) + green_dc_g * tintFactor;
+          shs[i].shs[2] = original_dc_b * (1.0f - tintFactor) + green_dc_b * tintFactor;
+       }
+    }
+
+    // -- MODIFIED LOGIC ENDS HERE --
+
+    // Step 4: Copy the modified SH data back to the GPU.
+    CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(shs_cuda, shs.data(), sizeof(SHs<3>) * count, cudaMemcpyHostToDevice));
+
+    SIBR_LOG << "Updated colors for " << output3dMask.count() << " gaussians." << std::endl;
 }
 
 void sibr::GaussianView::TransformGaussians(int selectedObjId, float removalThreshold, float zscoreThreshold, bool filterbyConvexHull, bool spatialPrunning, float uniformScale, const Vector3f& translation, const sibr::Vector3f& rotation_xyz_degrees)

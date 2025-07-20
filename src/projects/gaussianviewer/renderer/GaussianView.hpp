@@ -29,6 +29,7 @@
 
 #include <projects/gaussianviewer/renderer/GaussianStructures.hpp>
 #include <projects/gaussianviewer/renderer/GaussianHull.hpp>
+#include <projects/gaussianviewer/renderer/GaussianUtils.hpp>
 
 
 
@@ -100,6 +101,7 @@ namespace sibr {
 		void SegmentGaussians(int selectedObjId, float removalThreshold, float zscoreThreshold ,bool filterbyConvexHull, bool spatialPrunning);
 		void SelectGaussians(int selectedObjId, float selectionThreshold, float zscoreThreshold, bool filterbyConvexHull, bool spatialPrunning, std::vector<Objects> &objectData, std::vector<Pos>& pos, Eigen::Array<bool, Eigen::Dynamic, 1>& mask3d);
 		void ChangeColor(int selectedObjId, float removalThreshold, float zscoreThreshold, bool filterbyConvexHull, bool spatialPrunning);
+		void TransformGaussians(int selectedObjId, float removalThreshold, float zscoreThreshold, bool filterbyConvexHull, bool spatialPrunning);
 
 		/** \return a reference to the scene */
 		const std::shared_ptr<sibr::BasicIBRScene> & getScene() const { return _scene; }

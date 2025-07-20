@@ -985,6 +985,79 @@ void sibr::GaussianView::ChangeColor(int selectedObjId, float removalThreshold, 
 	SIBR_LOG << "Updated colors for " << output3dMask.count() << " gaussians." << std::endl;
 }
 
+void sibr::GaussianView::TransformGaussians(int selectedObjId, float removalThreshold, float zscoreThreshold, bool filterbyConvexHull, bool spatialPrunning)
+{
+    if (!objData)
+    {
+        SIBR_WRG << "The dataset format doesn't support object selection/modification!" << std::endl;
+        return;
+    }
+
+    // Step 1: Copy necessary data from GPU to CPU
+    std::vector<Pos> pos(count);
+    std::vector<Rot> rot(count);
+    std::vector<Scale> scales(count);  // Add scales if you need to modify them
+    std::vector<Objects> objectData(count);
+
+    CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(pos.data(), pos_cuda, sizeof(Pos) * count, cudaMemcpyDeviceToHost));
+    CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(rot.data(), rot_cuda, sizeof(Rot) * count, cudaMemcpyDeviceToHost));
+    CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(scales.data(), scale_cuda, sizeof(Scale) * count, cudaMemcpyDeviceToHost));  // If available
+    CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(objectData.data(), obj_cuda, sizeof(Objects) * count, cudaMemcpyDeviceToHost));
+
+    // Step 2: Get the selection mask
+    Eigen::Array<bool, Eigen::Dynamic, 1> output3dMask;
+    this->SelectGaussians(selectedObjId, removalThreshold, zscoreThreshold, filterbyConvexHull, spatialPrunning, objectData, pos, output3dMask);
+
+    // Step 3: Define the transformation
+    Eigen::Vector3f translation(1.0f, 0.5f, 0.0f); // Translation vector
+
+    // Optional: Define additional transformations
+    float uniformScale = 2.0f;  // Scale factor (1.0 = no scaling)
+    Eigen::Matrix3f additionalRotation = Eigen::Matrix3f::Identity();  // Additional rotation (Identity = no rotation)
+
+    // Step 4: Apply spatial transformation to selected Gaussians
+    for (int i = 0; i < count; ++i) {
+        if (output3dMask[i]) {
+            // OPTION 2: More complex transformation (if you need rotation/scaling of the entire group)
+            // Uncomment the following if you want to apply rotation/scaling to the gaussians themselves
+
+            // Get current rotation matrix
+            Eigen::Matrix3f currentR = build_rotation(rot[i]);
+
+            // Apply additional rotation to the gaussian's orientation
+            Eigen::Matrix3f newR = additionalRotation * currentR;
+            rot[i] = quaternion_from_rotation_matrix(newR);  // You'll need this function
+
+            // Apply uniform scaling to the gaussian's scales
+            if (uniformScale != 1.0f) {
+                scales[i].scale[0] *= uniformScale;
+                scales[i].scale[1] *= uniformScale;
+                scales[i].scale[2] *= uniformScale;
+            }
+
+            // Transform position: first rotate, then scale, then translate
+            Eigen::Vector3f newPos = additionalRotation * (pos[i] * uniformScale) + translation;
+            pos[i] = newPos;
+
+        }
+    }
+
+    // Step 5: Copy modified data back to GPU
+    CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(pos_cuda, pos.data(), sizeof(Pos) * count, cudaMemcpyHostToDevice));
+
+	if (uniformScale != 1.0f) {
+		CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(scale_cuda, scales.data(), sizeof(Scale) * count, cudaMemcpyHostToDevice));
+	}
+
+	// Only copy rotations back if they were actually modified.
+	// Use Eigen's isIdentity() for a robust check.
+	if (!additionalRotation.isIdentity()) {
+		CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(rot_cuda, rot.data(), sizeof(Rot) * count, cudaMemcpyHostToDevice));
+	}
+
+    SIBR_LOG << "Updated positions for " << output3dMask.count() << " gaussians." << std::endl;
+}
+
 void sibr::GaussianView::onRenderIBR(sibr::IRenderTarget & dst, const sibr::Camera & eye)
 {
 	if (currMode == "Ellipsoids")
@@ -1122,6 +1195,10 @@ void sibr::GaussianView::onGUI()
 			if (ImGui::Button("Change Color"))
 			{
 				ChangeColor(objSegmentID, segmentationThreshold, zscoreThreshold, filterbyConvexHull, SpatialPruning);
+			}
+			if (ImGui::Button("Transform Gaussians"))
+			{
+				TransformGaussians(objSegmentID, segmentationThreshold, zscoreThreshold, filterbyConvexHull, SpatialPruning);
 			}
 		}
 		ImGui::End();

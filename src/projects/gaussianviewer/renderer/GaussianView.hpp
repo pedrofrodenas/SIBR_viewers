@@ -103,6 +103,7 @@ namespace sibr {
 		void SelectGaussiansByID(int selectedObjId, float removalThreshold, float zscoreThreshold, bool filterbyConvexHull, bool spatialPrunning);
 		void RestoreColor(int selectedObjId);
 		void TransformGaussians(float uniformScale, const sibr::Vector3f& translation, const sibr::Vector3f& rotation_xyz_degrees);
+		void processMyText(const char* text);
 
 		/** \return a reference to the scene */
 		const std::shared_ptr<sibr::BasicIBRScene> & getScene() const { return _scene; }
@@ -165,6 +166,9 @@ namespace sibr {
 		float transform_scale = 1.0f;
 		Vector3f transform_translation = {0.0f, 0.0f, 0.0f};
 		Vector3f transform_rotation = {0.0f, 0.0f, 0.0f};
+
+		// Text Entry
+		char textInputBuffer[256] = {0};
 
 		// Selected Group Array
 		using GaussianGroup = Eigen::Array<bool, Eigen::Dynamic, 1>;

@@ -577,6 +577,9 @@ sibr::GaussianView::GaussianView(const sibr::BasicIBRScene::Ptr & ibrScene, uint
 		classifier = std::make_unique<GaussianClassifier>(modelPath);
 	}
 
+	// Initialize text input
+	memset(textInputBuffer, 0, sizeof(textInputBuffer));
+
 
 	// Allocate and fill the GPU data
 	CUDA_SAFE_CALL_ALWAYS(cudaMalloc((void**)&pos_cuda, sizeof(Pos) * P));
@@ -1135,6 +1138,21 @@ void sibr::GaussianView::TransformGaussians(float uniformScale, const sibr::Vect
              << centroid.transpose() << std::endl;
 }
 
+void sibr::GaussianView::processMyText(const char* text)
+{
+	// This is where you would put your logic.
+	// For now, we'll just print the text to the console to confirm it works.
+	if (text != nullptr && strlen(text) > 0)
+	{
+		SIBR_LOG << "Button clicked! Processing text: " << text << std::endl;
+		// You can now use the 'text' variable for your own logic.
+	}
+	else
+	{
+		SIBR_WRG << "Button clicked, but the text input is empty." << std::endl;
+	}
+}
+
 void sibr::GaussianView::onRenderIBR(sibr::IRenderTarget & dst, const sibr::Camera & eye)
 {
 	if (currMode == "Ellipsoids")
@@ -1319,6 +1337,18 @@ void sibr::GaussianView::onGUI()
 			{
 				TransformGaussians(transform_scale, transform_translation, transform_rotation);
 			}
+			ImGui::Separator(); // Add a line to separate from other controls.
+			ImGui::Text("Custom Text Function");
+
+			// Create the text input field.
+			ImGui::InputText("Your Text", textInputBuffer, sizeof(textInputBuffer));
+
+			// Create the button. If it's clicked, call the function.
+			if (ImGui::Button("Process Text"))
+			{
+				processMyText(textInputBuffer); // Call your function here with the text.
+			}
+			// --- END OF ADDED SECTION ---
 		}
 		ImGui::End();
 	}

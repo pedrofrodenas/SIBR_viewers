@@ -1152,6 +1152,11 @@ void sibr::GaussianView::processMyText(const char* text)
     std::string merges_file_path = "/home/prodenas/Projects/gaussian-grouping/output/figuritas/point_cloud_object_removal/iteration_30000/bpe_simple_vocab_16e6.txt";
     int context_length = 77;
 
+	if (!textEncoder->isReady()) {
+		SIBR_ERR << "CLIP text onnx encoder is not ready!" << std::endl;
+		return;
+	}
+
     try {
         ReplicatedTokenizer tokenizer(merges_file_path, context_length);
 
@@ -1184,10 +1189,84 @@ void sibr::GaussianView::processMyText(const char* text)
                 }
                 SIBR_LOG << "Tokens: [" << token_stream.str() << "]" << std::endl;
 
-                // Or store them in a member variable:
-                // this->current_tokens = tokens;
+            	// Convert tokens to int64_t for ONNX model
+            	std::vector<int64_t> tokens_int64;
+            	tokens_int64.reserve(tokens.size());
+            	for (int token : tokens) {
+            		tokens_int64.push_back(static_cast<int64_t>(token));
+            	}
 
-                // Or use them directly here for whatever processing you need
+            	// Get EOT token ID from tokenizer
+            	int eot_token_id = tokenizer.get_eot_token_id();
+            	SIBR_LOG << "EOT token ID: " << eot_token_id << std::endl;
+
+            	std::vector<int64_t> eot_indices;
+
+            	// Find the position of the EOT token
+            	int64_t eot_position = -1;
+            	for (size_t i = 0; i < tokens.size(); ++i) {
+            		if (tokens[i] == eot_token_id) {
+            			eot_position = static_cast<int64_t>(i);
+            			break;
+            		}
+            	}
+
+            	// If no EOT token found, use the last position
+            	if (eot_position == -1) {
+            		eot_position = static_cast<int64_t>(tokens.size() - 1);
+            		SIBR_WRG << "No EOT token found, using last position: " << eot_position << std::endl;
+            	} else {
+            		SIBR_LOG << "Found EOT token at position: " << eot_position << std::endl;
+            	}
+            	eot_indices.push_back(eot_position);
+
+            	// Prepare data for CLIP model (single batch)
+            	size_t batch_size = 1;
+
+            	// Run CLIP inference
+            	std::vector<float> text_features = textEncoder->inference(
+					tokens_int64,
+					eot_indices,
+					batch_size,
+					static_cast<size_t>(context_length)
+				);
+
+            	// Process the text features
+            	size_t feature_dim = textEncoder->getFeatureDimension();
+            	SIBR_LOG << "Generated text features with dimension: " << feature_dim << std::endl;
+
+            	// --- START: L2 Normalization ---
+
+            	// Iterate over each feature vector in the batch.
+            	for (size_t i = 0; i < batch_size; ++i) {
+            		// Calculate the starting index of the current feature vector.
+            		size_t start_idx = i * feature_dim;
+
+            		// 1. Calculate the L2 norm for the current vector.
+            		float norm_squared = 0.0f;
+            		for (size_t j = 0; j < feature_dim; ++j) {
+            			float val = text_features[start_idx + j];
+            			norm_squared += val * val;
+            		}
+            		float norm = std::sqrt(norm_squared);
+
+            		// 2. Normalize the vector (divide each component by the norm).
+            		// Avoid division by zero by checking if the norm is non-trivial.
+            		if (norm > 1e-6) { // 1e-6 is a small epsilon
+            			for (size_t j = 0; j < feature_dim; ++j) {
+            				text_features[start_idx + j] /= norm;
+            			}
+            		}
+            	}
+
+            	// Log first few feature values for debugging
+            	if (text_features.size() >= 5) {
+            		SIBR_LOG << "First 5 feature values: ";
+            		for (size_t i = 0; i < 5; ++i) {
+            			std::cout << text_features[i] << " ";
+            		}
+            		std::cout << std::endl;
+            	}
             }
             else {
                 SIBR_WRG << "Tokenization returned empty results." << std::endl;

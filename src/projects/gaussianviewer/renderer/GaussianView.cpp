@@ -493,7 +493,7 @@ std::function<char* (size_t N)> resizeFunctional(void** ptr, size_t& S) {
 	return lambda;
 }
 
-sibr::GaussianView::GaussianView(const sibr::BasicIBRScene::Ptr & ibrScene, uint render_w, uint render_h, const char* file, const char* modelPath, bool* messageRead, int sh_degree, bool white_bg, bool useInterop, int device) :
+sibr::GaussianView::GaussianView(const sibr::BasicIBRScene::Ptr & ibrScene, uint render_w, uint render_h, const char* file, const char* modelPath, const char* clipTextPath, bool* messageRead, int sh_degree, bool white_bg, bool useInterop, int device) :
 	_scene(ibrScene),
 	_dontshow(messageRead),
 	_sh_degree(sh_degree),
@@ -575,6 +575,15 @@ sibr::GaussianView::GaussianView(const sibr::BasicIBRScene::Ptr & ibrScene, uint
 	else
 	{
 		classifier = std::make_unique<GaussianClassifier>(modelPath);
+	}
+
+	// Load ONNX Classifier if exists
+	std::ifstream infile2(clipTextPath, std::ios_base::binary);
+	if (!infile2.good())
+		SIBR_WRG << "Unable to find ONNX clip text model file, attempted:\n" << clipTextPath << std::endl;
+	else
+	{
+		textEncoder = std::make_unique<CLIPTextEncoder>(clipTextPath);
 	}
 
 	// Initialize text input
@@ -1322,8 +1331,6 @@ void sibr::GaussianView::onGUI()
 				}
 				ImGui::EndChild();
 			}
-
-			// Safely remove the selected group outside of the iteration loop.
 			if (group_to_remove != -1)
 			{
 				RestoreColor(group_to_remove);
@@ -1340,15 +1347,12 @@ void sibr::GaussianView::onGUI()
 			ImGui::Separator(); // Add a line to separate from other controls.
 			ImGui::Text("Custom Text Function");
 
-			// Create the text input field.
 			ImGui::InputText("Your Text", textInputBuffer, sizeof(textInputBuffer));
 
-			// Create the button. If it's clicked, call the function.
 			if (ImGui::Button("Process Text"))
 			{
 				processMyText(textInputBuffer); // Call your function here with the text.
 			}
-			// --- END OF ADDED SECTION ---
 		}
 		ImGui::End();
 	}

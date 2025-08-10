@@ -493,7 +493,7 @@ std::function<char* (size_t N)> resizeFunctional(void** ptr, size_t& S) {
 	return lambda;
 }
 
-sibr::GaussianView::GaussianView(const sibr::BasicIBRScene::Ptr & ibrScene, uint render_w, uint render_h, const char* file, const char* modelPath, const char* clipTextPath, bool* messageRead, int sh_degree, bool white_bg, bool useInterop, int device) :
+sibr::GaussianView::GaussianView(const sibr::BasicIBRScene::Ptr & ibrScene, uint render_w, uint render_h, const char* file, const char* modelPath, const char* clipTextPath, const char* cnpyPath, bool* messageRead, int sh_degree, bool white_bg, bool useInterop, int device) :
 	_scene(ibrScene),
 	_dontshow(messageRead),
 	_sh_degree(sh_degree),
@@ -584,6 +584,22 @@ sibr::GaussianView::GaussianView(const sibr::BasicIBRScene::Ptr & ibrScene, uint
 	else
 	{
 		textEncoder = std::make_unique<CLIPTextEncoder>(clipTextPath);
+		textEncoderReady = true;
+	}
+
+	// Load cnpy data
+	std::ifstream infile3(cnpyPath, std::ios_base::binary);
+	if (!infile3.good())
+		SIBR_WRG << "Unable to find cnpy data (image embeddings), attempted:\n" << cnpyPath << std::endl;
+	else
+	{
+		cnpyLoader = std::make_unique<NumpyArrayLoader>(cnpyPath);
+		if (!cnpyLoader->loadArrays()) {
+			SIBR_ERR << "Failed to load arrays from " << cnpyPath << std::endl;
+		}
+		else {
+			cnpyLoaderReady = true;
+		}
 	}
 
 	// Initialize text input
@@ -1259,13 +1275,6 @@ int sibr::GaussianView::selectByText(const char* text)
             		}
             	}
 
-            	std::string folder_path = "/home/prodenas/Projects/gaussian-grouping/output/figuritas/point_cloud_object_removal/iteration_30000";
-            	NumpyArrayLoader loader(folder_path);
-            	if (!loader.loadArrays()) {
-            		std::cerr << "Failed to load arrays from " << folder_path << std::endl;
-            		return -1;
-            	}
-
             	// Log first few feature values for debugging
             	if (text_features.size() >= 5) {
             		SIBR_LOG << "First 5 feature values: ";
@@ -1279,7 +1288,7 @@ int sibr::GaussianView::selectByText(const char* text)
             	const float* text_emb = text_features.data();
 
             	// Compute mean similarities between text and image embeddings
-            	std::map<int, float> similarities = compute_mean_similarities(text_emb, feature_dim, loader);
+            	std::map<int, float> similarities = compute_mean_similarities(text_emb, feature_dim, *cnpyLoader);
 
             	// Log the results
             	SIBR_LOG << "Computed similarities for " << similarities.size() << " arrays:" << std::endl;

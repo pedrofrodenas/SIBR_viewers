@@ -63,7 +63,7 @@ namespace sibr {
 		 * \param render_w rendering width
 		 * \param render_h rendering height
 		 */
-		GaussianView(const sibr::BasicIBRScene::Ptr& ibrScene, uint render_w, uint render_h, const char* file, const char* modelPath, const char* clipTextPath, bool* message_read, int sh_degree, bool white_bg = false, bool useInterop = true, int device = 0);
+		GaussianView(const sibr::BasicIBRScene::Ptr& ibrScene, uint render_w, uint render_h, const char* file, const char* modelPath, const char* clipTextPath, const char* cnpyPath, bool* message_read, int sh_degree, bool white_bg = false, bool useInterop = true, int device = 0);
 
 		/** Replace the current scene.
 		 *\param newScene the new scene to render */
@@ -158,6 +158,10 @@ namespace sibr {
 
 		std::unique_ptr<GaussianClassifier> classifier;
 		std::unique_ptr<CLIPTextEncoder> textEncoder;
+		bool textEncoderReady = false;
+		std::unique_ptr<NumpyArrayLoader> cnpyLoader;
+		bool cnpyLoaderReady = false;
+
 		bool showSegmentationOptions=false;
 		float segmentationThreshold = 0.5f;
 		float zscoreThreshold = 0.2f;

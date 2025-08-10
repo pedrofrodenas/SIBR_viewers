@@ -175,22 +175,27 @@ int main(int ac, char** av)
 	std::string plyfile = myArgs.modelPath.get();
 	std::string modelPath;
 	std::string clipTextPath;
+	std::string cnpyPath;
+
 	if (plyfile.back() != '/')
 		plyfile += "/";
 	modelPath = plyfile + "point_cloud_object_removal";
 	clipTextPath = plyfile + "point_cloud_object_removal";
+	cnpyPath = plyfile + "point_cloud_object_removal";
 	plyfile += "point_cloud";
 	if (!myArgs.iteration.isInit())
 	{
 		plyfile += "/" + findLargestNumberedSubdirectory(plyfile) + "/point_cloud.ply";
 		modelPath += "/" + findLargestNumberedSubdirectory(modelPath) + "/classifier.onnx";
 		clipTextPath += "/" + findLargestNumberedSubdirectory(clipTextPath) + "/text_encoder.onnx";
+		cnpyPath += "/" + findLargestNumberedSubdirectory(cnpyPath);
 	}
 	else
 	{
 		plyfile += "/iteration_" + myArgs.iteration.get() + "/point_cloud.ply";
 		modelPath += "/iteration_" + myArgs.iteration.get() + "/classifier.onnx";
 		clipTextPath += "/" + findLargestNumberedSubdirectory(clipTextPath) + "/text_encoder.onnx";
+		cnpyPath += "/" + findLargestNumberedSubdirectory(cnpyPath);
 	}
 
 	// Setup the scene: load the proxy, create the texture arrays.
@@ -220,7 +225,7 @@ int main(int ac, char** av)
 	const unsigned int sceneResHeight = usedResolution.y();
 
 	// Create the ULR view.
-	GaussianView::Ptr	gaussianView(new GaussianView(scene, sceneResWidth, sceneResHeight, plyfile.c_str(), modelPath.c_str(), clipTextPath.c_str(), &messageRead, sh_degree, white_background, !myArgs.noInterop, device));
+	GaussianView::Ptr	gaussianView(new GaussianView(scene, sceneResWidth, sceneResHeight, plyfile.c_str(), modelPath.c_str(), clipTextPath.c_str(), cnpyPath.c_str(), &messageRead, sh_degree, white_background, !myArgs.noInterop, device));
 
 	// Raycaster.
 	std::shared_ptr<sibr::Raycaster> raycaster = std::make_shared<sibr::Raycaster>();

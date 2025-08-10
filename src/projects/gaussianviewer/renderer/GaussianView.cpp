@@ -1149,17 +1149,58 @@ void sibr::GaussianView::TransformGaussians(float uniformScale, const sibr::Vect
 
 void sibr::GaussianView::processMyText(const char* text)
 {
-	// This is where you would put your logic.
-	// For now, we'll just print the text to the console to confirm it works.
-	if (text != nullptr && strlen(text) > 0)
-	{
-		SIBR_LOG << "Button clicked! Processing text: " << text << std::endl;
-		// You can now use the 'text' variable for your own logic.
-	}
-	else
-	{
-		SIBR_WRG << "Button clicked, but the text input is empty." << std::endl;
-	}
+    std::string merges_file_path = "/home/prodenas/Projects/gaussian-grouping/output/figuritas/point_cloud_object_removal/iteration_30000/bpe_simple_vocab_16e6.txt";
+    int context_length = 77;
+
+    try {
+        ReplicatedTokenizer tokenizer(merges_file_path, context_length);
+
+        if (text != nullptr && strlen(text) > 0)
+        {
+            SIBR_LOG << "Button clicked! Processing text: " << text << std::endl;
+
+            // Convert const char* to std::wstring
+            std::string str_text(text);
+            std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
+            std::wstring wide_text = converter.from_bytes(str_text);
+
+            // Prepare input for tokenizer (vector of wstrings)
+            std::vector<std::wstring> texts = {wide_text};
+
+            // Call the tokenizer
+            std::vector<std::vector<int>> tokenized_results = tokenizer(texts);
+
+            // Process the results
+            if (!tokenized_results.empty()) {
+                const auto& tokens = tokenized_results[0]; // Get first (and only) result
+
+                SIBR_LOG << "Tokenized text into " << tokens.size() << " tokens:" << std::endl;
+
+                // Print tokens (optional - for debugging)
+                std::ostringstream token_stream;
+                for (size_t i = 0; i < tokens.size(); ++i) {
+                    token_stream << tokens[i];
+                    if (i < tokens.size() - 1) token_stream << ", ";
+                }
+                SIBR_LOG << "Tokens: [" << token_stream.str() << "]" << std::endl;
+
+                // Or store them in a member variable:
+                // this->current_tokens = tokens;
+
+                // Or use them directly here for whatever processing you need
+            }
+            else {
+                SIBR_WRG << "Tokenization returned empty results." << std::endl;
+            }
+        }
+        else
+        {
+            SIBR_WRG << "Button clicked, but the text input is empty." << std::endl;
+        }
+    }
+    catch (const std::exception& e) {
+        SIBR_ERR << "Error initializing or using tokenizer: " << e.what() << std::endl;
+    }
 }
 
 void sibr::GaussianView::onRenderIBR(sibr::IRenderTarget & dst, const sibr::Camera & eye)

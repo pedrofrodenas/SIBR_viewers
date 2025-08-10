@@ -31,6 +31,7 @@
 #include <projects/gaussianviewer/renderer/GaussianHull.hpp>
 #include <projects/gaussianviewer/renderer/GaussianUtils.hpp>
 #include <projects/gaussianviewer/renderer/CLIPTextEncoder.hpp>
+#include <projects/gaussianviewer/renderer/CLIPTokenizer.hpp>
 
 
 

@@ -1259,6 +1259,13 @@ void sibr::GaussianView::processMyText(const char* text)
             		}
             	}
 
+            	std::string folder_path = "/home/prodenas/Projects/gaussian-grouping/output/figuritas/point_cloud_object_removal/iteration_30000";
+            	NumpyArrayLoader loader(folder_path);
+            	if (!loader.loadArrays()) {
+            		std::cerr << "Failed to load arrays from " << folder_path << std::endl;
+            		return;
+            	}
+
             	// Log first few feature values for debugging
             	if (text_features.size() >= 5) {
             		SIBR_LOG << "First 5 feature values: ";
@@ -1266,6 +1273,28 @@ void sibr::GaussianView::processMyText(const char* text)
             			std::cout << text_features[i] << " ";
             		}
             		std::cout << std::endl;
+            	}
+
+            	// Get pointer to the normalized text embedding
+            	const float* text_emb = text_features.data();
+
+            	// Compute mean similarities between text and image embeddings
+            	std::map<int, float> similarities = compute_mean_similarities(text_emb, feature_dim, loader);
+
+            	// Log the results
+            	SIBR_LOG << "Computed similarities for " << similarities.size() << " arrays:" << std::endl;
+            	for (const auto& pair : similarities) {
+            		SIBR_LOG << "Array ID " << pair.first << ": mean similarity = " << pair.second << std::endl;
+            	}
+
+            	// Find the array with highest similarity
+            	if (!similarities.empty()) {
+            		auto max_it = std::max_element(similarities.begin(), similarities.end(),
+						[](const std::pair<int, float>& a, const std::pair<int, float>& b) {
+							return a.second < b.second;
+						});
+            		SIBR_LOG << "Best match: Array ID " << max_it->first
+							 << " with similarity " << max_it->second << std::endl;
             	}
             }
             else {

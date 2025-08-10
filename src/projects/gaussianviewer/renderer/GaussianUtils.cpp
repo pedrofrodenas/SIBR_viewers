@@ -79,3 +79,43 @@ Rot quaternion_from_rotation_matrix(const Eigen::Matrix3f& R) {
 
     return quat;
 }
+
+float dot_product(const float* a, const float* b, size_t size) {
+    float sum = 0.0f;
+    for (size_t i = 0; i < size; ++i) {
+        sum += a[i] * b[i];
+    }
+    return sum;
+}
+
+std::map<int, float> compute_mean_similarities(const float* text_emb, size_t feature_dim, const NumpyArrayLoader& loader) {
+    std::map<int, float> mean_similarities;
+    auto array_ids = loader.getArrayIds();
+    for (int array_id : array_ids) {
+        const cnpy::NpyArray* array = loader.getArray(array_id);
+        if (!array || array->shape.size() != 2) {
+            std::cerr << "Invalid array for ID " << array_id << std::endl;
+            continue;
+        }
+        size_t n_images = array->shape[0];
+        size_t emb_dim = array->shape[1];
+        if (emb_dim != feature_dim) {
+            std::cerr << "Embedding dimension mismatch for ID " << array_id << ": expected " << feature_dim << ", got " << emb_dim << std::endl;
+            continue;
+        }
+        const float* image_embeddings = loader.getFloatData(array_id);
+        if (!image_embeddings) {
+            std::cerr << "Failed to get data for ID " << array_id << std::endl;
+            continue;
+        }
+        float total_similarity = 0.0f;
+        for (size_t k = 0; k < n_images; ++k) {
+            const float* image_emb = image_embeddings + k * emb_dim;
+            float similarity = dot_product(text_emb, image_emb, emb_dim);
+            total_similarity += similarity;
+        }
+        float mean_similarity = total_similarity / static_cast<float>(n_images);
+        mean_similarities[array_id] = mean_similarity;
+    }
+    return mean_similarities;
+}

@@ -1147,14 +1147,14 @@ void sibr::GaussianView::TransformGaussians(float uniformScale, const sibr::Vect
              << centroid.transpose() << std::endl;
 }
 
-void sibr::GaussianView::processMyText(const char* text)
+int sibr::GaussianView::selectByText(const char* text)
 {
     std::string merges_file_path = "/home/prodenas/Projects/gaussian-grouping/output/figuritas/point_cloud_object_removal/iteration_30000/bpe_simple_vocab_16e6.txt";
     int context_length = 77;
 
 	if (!textEncoder->isReady()) {
 		SIBR_ERR << "CLIP text onnx encoder is not ready!" << std::endl;
-		return;
+		return -1;
 	}
 
     try {
@@ -1263,7 +1263,7 @@ void sibr::GaussianView::processMyText(const char* text)
             	NumpyArrayLoader loader(folder_path);
             	if (!loader.loadArrays()) {
             		std::cerr << "Failed to load arrays from " << folder_path << std::endl;
-            		return;
+            		return -1;
             	}
 
             	// Log first few feature values for debugging
@@ -1295,7 +1295,9 @@ void sibr::GaussianView::processMyText(const char* text)
 						});
             		SIBR_LOG << "Best match: Array ID " << max_it->first
 							 << " with similarity " << max_it->second << std::endl;
+            		return max_it->first;
             	}
+
             }
             else {
                 SIBR_WRG << "Tokenization returned empty results." << std::endl;
@@ -1430,7 +1432,16 @@ void sibr::GaussianView::onGUI()
 		ImGui::Checkbox("Show Segmentation Options", &showSegmentationOptions);
 		if (showSegmentationOptions)
 		{
-			ImGui::InputInt("ID Object to Segment", &objSegmentID);
+			ImGui::Separator(); // Add a line to separate from other controls.
+			ImGui::Text("Select Object By Text");
+
+			ImGui::InputText("Your Text", textInputBuffer, sizeof(textInputBuffer));
+
+			if (ImGui::Button("Process Text"))
+			{
+				objSegmentID = selectByText(textInputBuffer); // Call your function here with the text.
+				SelectGaussiansByID(objSegmentID, segmentationThreshold, zscoreThreshold, filterbyConvexHull, SpatialPruning);
+			}
 			ImGui::SliderFloat("Segmentation Threshold", &segmentationThreshold, 0.0f, 1.0f);
 			ImGui::Checkbox("Filter by 3D ConvexHull", &filterbyConvexHull);
 			if (filterbyConvexHull)
@@ -1444,10 +1455,6 @@ void sibr::GaussianView::onGUI()
 			if (ImGui::Button("Remove Gaussians"))
 			{
 				SegmentGaussians(objSegmentID, segmentationThreshold, zscoreThreshold, filterbyConvexHull, SpatialPruning);
-			}
-			if (ImGui::Button("Select Gaussians"))
-			{
-				SelectGaussiansByID(objSegmentID, segmentationThreshold, zscoreThreshold, filterbyConvexHull, SpatialPruning);
 			}
 			ImGui::Separator();
 
@@ -1492,15 +1499,6 @@ void sibr::GaussianView::onGUI()
 			if (ImGui::Button("Transform Gaussians"))
 			{
 				TransformGaussians(transform_scale, transform_translation, transform_rotation);
-			}
-			ImGui::Separator(); // Add a line to separate from other controls.
-			ImGui::Text("Custom Text Function");
-
-			ImGui::InputText("Your Text", textInputBuffer, sizeof(textInputBuffer));
-
-			if (ImGui::Button("Process Text"))
-			{
-				processMyText(textInputBuffer); // Call your function here with the text.
 			}
 		}
 		ImGui::End();

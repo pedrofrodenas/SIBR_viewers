@@ -106,7 +106,7 @@ namespace sibr {
 		void SelectGaussiansByID(int selectedObjId, float removalThreshold, float zscoreThreshold, bool filterbyConvexHull, bool spatialPrunning);
 		void RestoreColor(int selectedObjId);
 		void TransformGaussians(float uniformScale, const sibr::Vector3f& translation, const sibr::Vector3f& rotation_xyz_degrees);
-		void processMyText(const char* text);
+		int selectByText(const char* text);
 
 		/** \return a reference to the scene */
 		const std::shared_ptr<sibr::BasicIBRScene> & getScene() const { return _scene; }

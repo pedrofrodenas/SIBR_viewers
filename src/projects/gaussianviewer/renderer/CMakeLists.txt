@@ -130,6 +130,15 @@ if (NOT WIN32)
 	#       DESTINATION bin)
 endif()
 
+# Install the vocabulary file for all platforms
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/bpe_simple_vocab_16e6.txt")
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/bpe_simple_vocab_16e6.txt"
+            DESTINATION bin)
+	message(The file "bpe_simple_vocab_16e6.txt is found in ${CMAKE_CURRENT_SOURCE_DIR}")
+else()
+    message(FATAL_ERROR "bpe_simple_vocab_16e6.txt not found in ${CMAKE_CURRENT_SOURCE_DIR}")
+endif()
+
 add_definitions( -DSIBR_EXP_ULR_EXPORTS -DBOOST_ALL_DYN_LINK  )
 
 set_target_properties(${PROJECT_NAME} PROPERTIES FOLDER "projects/${SIBR_PROJECT}/renderer")

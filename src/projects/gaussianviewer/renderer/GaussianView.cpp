@@ -1165,7 +1165,7 @@ void sibr::GaussianView::TransformGaussians(float uniformScale, const sibr::Vect
 
 int sibr::GaussianView::selectByText(const char* text)
 {
-    std::string merges_file_path = "/home/prodenas/Projects/gaussian-grouping/output/figuritas/point_cloud_object_removal/iteration_30000/bpe_simple_vocab_16e6.txt";
+    std::string merges_file_path = "bpe_simple_vocab_16e6.txt";
     int context_length = 77;
 
 	if (!textEncoder->isReady()) {

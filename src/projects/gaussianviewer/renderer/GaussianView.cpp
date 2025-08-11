@@ -1448,8 +1448,14 @@ void sibr::GaussianView::onGUI()
 
 			if (ImGui::Button("Identify Object"))
 			{
-				objSegmentID = selectByText(textInputBuffer); // Call your function here with the text.
-				SelectGaussiansByID(objSegmentID, segmentationThreshold, zscoreThreshold, filterbyConvexHull, SpatialPruning);
+				if (!textEncoderReady || !cnpyLoaderReady)
+					{
+					SIBR_WRG << "The dataset format doesn't support object selection! There is no clip encoder in dataset or cnpy data." << std::endl;
+					}
+				else {
+					objSegmentID = selectByText(textInputBuffer); // Call your function here with the text.
+					SelectGaussiansByID(objSegmentID, segmentationThreshold, zscoreThreshold, filterbyConvexHull, SpatialPruning);
+				}
 			}
 			ImGui::SliderFloat("Segmentation Threshold", &segmentationThreshold, 0.0f, 1.0f);
 			ImGui::Checkbox("Filter by 3D ConvexHull", &filterbyConvexHull);

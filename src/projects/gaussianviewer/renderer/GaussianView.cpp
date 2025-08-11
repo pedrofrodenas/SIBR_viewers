@@ -1444,9 +1444,9 @@ void sibr::GaussianView::onGUI()
 			ImGui::Separator(); // Add a line to separate from other controls.
 			ImGui::Text("Select Object By Text");
 
-			ImGui::InputText("Your Text", textInputBuffer, sizeof(textInputBuffer));
+			ImGui::InputText("Object Description", textInputBuffer, sizeof(textInputBuffer));
 
-			if (ImGui::Button("Process Text"))
+			if (ImGui::Button("Identify Object"))
 			{
 				objSegmentID = selectByText(textInputBuffer); // Call your function here with the text.
 				SelectGaussiansByID(objSegmentID, segmentationThreshold, zscoreThreshold, filterbyConvexHull, SpatialPruning);

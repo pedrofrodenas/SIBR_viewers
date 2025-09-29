@@ -568,6 +568,11 @@ sibr::GaussianView::GaussianView(const sibr::BasicIBRScene::Ptr & ibrScene, uint
 
 	backupOriginalData(pos, rot, scale, opacity, shs, objectData);
 
+	_current_to_original.resize(count);
+		for (int i = 0; i < count; ++i) {
+			_current_to_original[i] = i;
+		}
+
 	// Load ONNX Classifier if exists
 	std::ifstream infile(modelPath, std::ios_base::binary);
 	if (!infile.good())
@@ -703,6 +708,12 @@ void sibr::GaussianView::backupOriginalData(
 	_originalScale = scale;
 	_originalOpacity = opacity;
 	_originalCount = pos.size();
+
+	_current_to_original.resize(_originalCount);
+	for (size_t i = 0; i < _originalCount; ++i) {
+		_current_to_original[i] = i;
+	}
+
 	_originalShs = shs;
 
 	// Store DC data if needed
@@ -727,6 +738,12 @@ void sibr::GaussianView::restoreOriginalData()
 
     // Step 2: Restore count to original
     count = _originalCount;
+
+	_current_to_original.resize(count);
+	for (size_t i = 0; i < count; ++i) {
+		_current_to_original[i] = i;
+	}
+	selectedGroups.clear();  // Clear selections since we're restoring the full original scene
 
     // Step 3: Allocate new GPU memory for original dataset
     CUDA_SAFE_CALL_ALWAYS(cudaMalloc((void**)&pos_cuda, sizeof(Pos) * count));
@@ -895,6 +912,14 @@ void sibr::GaussianView::SegmentGaussians(int selectedObjId, float removalThresh
 	Eigen::Array<bool, Eigen::Dynamic, 1> output3dMask;
 	this->SelectGaussians(selectedObjId, removalThreshold, zscoreThreshold, filterbyConvexHull, spatialPrunning, objectData, pos, output3dMask);
 
+	// Collect indices of kept Gaussians (in current index space)
+	std::vector<int> kept_current_indices;
+	for (int i = 0; i < count; ++i) {
+		if (!output3dMask[i]) {
+			kept_current_indices.push_back(i);
+		}
+	}
+
 	// Step 3: Filter out gaussians where mask3d is True
 	std::vector<Pos> filtered_pos;
 	std::vector<Rot> filtered_rot;
@@ -903,26 +928,44 @@ void sibr::GaussianView::SegmentGaussians(int selectedObjId, float removalThresh
 	std::vector<SHs<3>> filtered_shs;
 	std::vector<Objects> filtered_objectData;
 
-	filtered_pos.reserve(count);
-	filtered_rot.reserve(count);
-	filtered_scale.reserve(count);
-	filtered_opacity.reserve(count);
-	filtered_shs.reserve(count);
-	filtered_objectData.reserve(count);
+	filtered_pos.reserve(kept_current_indices.size());
+	filtered_rot.reserve(kept_current_indices.size());
+	filtered_scale.reserve(kept_current_indices.size());
+	filtered_opacity.reserve(kept_current_indices.size());
+	filtered_shs.reserve(kept_current_indices.size());
+	filtered_objectData.reserve(kept_current_indices.size());
 
-	for (int i = 0; i < count; ++i) {
-		if (!output3dMask[i]) { // Keep gaussians where mask3d is False
-			filtered_pos.push_back(pos[i]);
-			filtered_rot.push_back(rot[i]);
-			filtered_scale.push_back(scale[i]);
-			filtered_opacity.push_back(opacity[i]);
-			filtered_shs.push_back(shs[i]);
-			filtered_objectData.push_back(objectData[i]);
-		}
+	for (auto old_i : kept_current_indices) {
+		filtered_pos.push_back(pos[old_i]);
+		filtered_rot.push_back(rot[old_i]);
+		filtered_scale.push_back(scale[old_i]);
+		filtered_opacity.push_back(opacity[old_i]);
+		filtered_shs.push_back(shs[old_i]);
+		filtered_objectData.push_back(objectData[old_i]);
 	}
 
 	// Update count to reflect new size
 	int new_count = filtered_pos.size();
+
+	selectedGroups.erase(selectedObjId);
+
+	for (auto& pair : selectedGroups) {
+		auto& old_mask = pair.second;
+		Eigen::Array<bool, Eigen::Dynamic, 1> new_mask(new_count);
+		for (int j = 0; j < new_count; ++j) {
+			int old_curr_i = kept_current_indices[j];
+			new_mask[j] = old_mask[old_curr_i];
+		}
+		pair.second = new_mask;
+	}
+
+	// Update mapping to original indices
+	std::vector<int> new_to_orig(new_count);
+	for (int j = 0; j < new_count; ++j) {
+		int old_curr_i = kept_current_indices[j];
+		new_to_orig[j] = _current_to_original[old_curr_i];
+	}
+	_current_to_original = new_to_orig;
 
 	SIBR_LOG << "Number of gaussians after filtering: " << new_count << std::endl;
 
@@ -1037,15 +1080,11 @@ void sibr::GaussianView::RestoreColor(int selectedObjId)
 	std::vector<SHs<3>> shs(count);
 	CUDA_SAFE_CALL_ALWAYS(cudaMemcpy(shs.data(), shs_cuda, sizeof(SHs<3>) * count, cudaMemcpyDeviceToHost));
 
-	// Step 3: Iterate through all Gaussians and restore the color for the selected ones.
 	int restored_count = 0;
-	for (int i = 0; i < count; ++i)
-	{
-		// If the mask at index 'i' is true, it means this Gaussian's color was changed.
-		if (mask[i])
-		{
-			// Restore the original SH coefficients from the backup array.
-			shs[i] = _originalShs[i];
+	for (int i = 0; i < count; ++i) {
+		if (mask[i]) {
+			int orig_i = _current_to_original[i];
+			shs[i] = _originalShs[orig_i];
 			restored_count++;
 		}
 	}

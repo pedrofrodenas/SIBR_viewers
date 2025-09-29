@@ -192,6 +192,8 @@ namespace sibr {
 		std::vector<SHs<3>> _originalShs;  // Raw bytes storage
 		int _originalCount;
 
+		std::vector<int> _current_to_original;  // Maps current index to original backup index
+
 
 		std::shared_ptr<sibr::BasicIBRScene> _scene; ///< The current scene.
 		PointBasedRenderer::Ptr _pointbasedrenderer;
